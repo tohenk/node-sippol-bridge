@@ -147,6 +147,10 @@ class SippolBridge {
         });
     }
 
+    selfTest() {
+        return this.do(() => this.sippol.sleep());
+    }
+
     fetch() {
         return new Promise((resolve, reject) => {
             this.sippol.fetchData()

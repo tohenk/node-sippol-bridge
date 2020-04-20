@@ -126,10 +126,9 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
     });
     http.listen(port, () => {
         console.log('Application ready on port %s...', port);
-        /*Work.works([
-            () => bridge.list(),
-            () => bridge.createSpp(JSON.parse(fs.readFileSync(path.join(__dirname, 'spp.json')))),
-        ]);*/
+        Work.works([
+            () => bridge.selfTest(),
+        ]);
     });
 })();
 
