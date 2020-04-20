@@ -1,0 +1,144 @@
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2020 Toha <tohenk@yahoo.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is furnished to do
+ * so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+const fs = require('fs');
+const path = require('path');
+const Cmd = require('./lib/cmd');
+const Work = require('./lib/work');
+
+Cmd.addBool('help', 'h', 'Show program usage').setAccessible(false);
+Cmd.addVar('config', 'c', 'Set configuration file', 'filename');
+Cmd.addVar('port', 'p', 'Set web server port to listen', 'port');
+Cmd.addVar('url', '', 'Set SIPPOL url', 'url');
+Cmd.addVar('username', 'u', 'Set login username', 'username');
+Cmd.addVar('password', 'p', 'Set login password', 'password');
+Cmd.addVar('profile', '', 'Use conncetion profile', 'profile');
+
+if (!Cmd.parse() || (Cmd.get('help') && usage())) {
+    process.exit();
+}
+
+(function run() {
+    let config = {}, profile, filename;
+    // read configuration from command line values
+    filename = Cmd.get('config') ? Cmd.get('config') : path.join(__dirname, 'config.json');
+    if (fs.existsSync(filename)) {
+        console.log('Reading configuration %s', filename);
+        config = JSON.parse(fs.readFileSync(filename));
+    }
+    if (Cmd.get('url')) config.url = Cmd.get('url');
+    if (Cmd.get('username')) config.username = Cmd.get('username');
+    if (Cmd.get('password')) config.password = Cmd.get('password');
+    if (!config.workdir) config.workdir = __dirname;
+
+    if (!config.username || !config.password) {
+        console.error('Both username or password must be supplied!');
+        return;
+    }
+    // load form maps
+    filename = path.join(__dirname, 'maps.json');
+    if (fs.existsSync(filename)) {
+        config.maps = JSON.parse(fs.readFileSync(filename));
+        console.log('Maps loaded from %s', filename);
+    }
+    // load profile
+    config.profiles = {};
+    filename = path.join(__dirname, 'profiles.json');
+    if (fs.existsSync(filename)) {
+        const profiles = JSON.parse(fs.readFileSync(filename));
+        if (profiles.profiles) config.profiles = profiles.profiles;
+        if (profiles.active) profile = profiles.active;
+    }
+    if (Cmd.get('profile')) profile = Cmd.get('profile');
+    if (profile && config.profiles[profile]) {
+        console.log('Using profile %s', profile);
+        const keys = ['timeout', 'wait', 'delay', 'opdelay'];
+        for (let key in config.profiles[profile]) {
+            if (keys.indexOf(key) < 0) continue;
+            config[key] = config.profiles[profile][key];
+        }
+    }
+
+    const port = Cmd.get('port') | 3000;
+    const SippolBridge = require('./bridge');
+    const bridge = new SippolBridge(config);
+    const http = require('http').createServer();
+    const io = require('socket.io')(http);
+    io.of('/sippol').on('connection', (socket) => {
+        console.log('Client connected: %s', socket.id);
+        socket.on('disconnect', () => {
+            console.log('Client disconnected: %s', socket.id);
+        });
+        socket.on('setup', (data) => {
+            if (data.callback) {
+                bridge.addCallback(data.callback);
+            }
+            socket.emit('setup', {version: bridge.VERSION});
+        });
+        socket.on('spp', (data) => {
+            console.log('SPP: %s', JSON.stringify(data));
+            bridge.createSpp(data)
+                .then((result) => {
+                    socket.emit('spp', result);
+                })
+                .catch((err) => {
+                    socket.emit('spp', {error: err})
+                })
+            ;
+        });
+        socket.on('upload', (data) => {
+        });
+        socket.on('query', (id) => {
+            console.log('Query: %s', id);
+            bridge.getSpp(id)
+                .then((res) => {
+                    if (res) {
+                        socket.emit('query', {id: id, success: true, result: res});
+                    } else {
+                        socket.emit('query', {id: id, success: false});
+                    }
+                })
+            ;
+        });
+        socket.on('list', (year) => {
+        });
+    });
+    http.listen(port, () => {
+        console.log('Application ready on port %s...', port);
+        /*Work.works([
+            () => bridge.list(),
+            () => bridge.createSpp(JSON.parse(fs.readFileSync(path.join(__dirname, 'spp.json')))),
+        ]);*/
+    });
+})();
+
+function usage() {
+    console.log('Usage:');
+    console.log('  node %s [options]', path.basename(process.argv[1]));
+    console.log('');
+    console.log('Options:');
+    console.log(Cmd.dump());
+    console.log('');
+    return true;
+}

@@ -1,0 +1,14 @@
+{
+  "name": "sippol-bridge",
+  "version": "1.0.0",
+  "description": "SIPPOL bridge",
+  "main": "app.js",
+  "author": "Toha <tohenk@yahoo.com>",
+  "license": "MIT",
+  "dependencies": {
+    "bufferutil": "^4.0.1",
+    "selenium-webdriver": "^4.0.0-alpha.7",
+    "socket.io": "^2.3.0",
+    "utf-8-validate": "^5.0.2"
+  }
+}
