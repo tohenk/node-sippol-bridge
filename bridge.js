@@ -46,12 +46,6 @@ class SippolBridge {
         });
     }
 
-    addCallback(url) {
-        if (this.callback.indexOf(url) < 0) {
-            this.callback.push(url);
-        }
-    }
-
     processQueue(data) {
         switch (data.type) {
             case this.QUEUE_SPP:
@@ -99,6 +93,12 @@ class SippolBridge {
         }
     }
 
+    addCallback(url) {
+        if (this.callback.indexOf(url) < 0) {
+            this.callback.push(url);
+        }
+    }
+
     updateItems(items) {
         for (let i = 0; i < items.length; i++) {
             let pid = items[i].Id;
@@ -119,6 +119,23 @@ class SippolBridge {
             }
         }
         return result;
+    }
+
+    sleep(ms) {
+        return this.sippol.sleep(ms);
+    }
+
+    isReady() {
+        return new Promise((resolve, reject) => {
+            const f = () => {
+                if (this.sippol.ready) {
+                    resolve();
+                } else {
+                    setTimeout(f, 100);
+                }
+            }
+            f();
+        });
     }
 
     do(works) {

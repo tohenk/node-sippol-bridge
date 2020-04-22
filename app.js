@@ -127,6 +127,7 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
     http.listen(port, () => {
         console.log('Application ready on port %s...', port);
         Work.works([
+            () => bridge.isReady(),
             () => bridge.selfTest(),
         ]);
     });
