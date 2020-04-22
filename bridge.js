@@ -247,7 +247,8 @@ class SippolBridge {
         }
         return new Promise((resolve, reject) => {
             const q = new Queue(this.callback, (url) => {
-                const http = require('http');
+                const parsedUrl = require('url').parse(url);
+                const http = require('https:' == parsedUrl.protocol ? 'https' : 'http');
                 const payload = JSON.stringify({spp: data});
                 const options = {
                     method: 'POST',
