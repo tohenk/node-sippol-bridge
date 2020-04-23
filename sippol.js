@@ -112,6 +112,21 @@ class Sippol extends WebRobot {
         return null;
     }
 
+    filterKey(type) {
+        if (!this.filterKeys) {
+            this.filterKeys = {
+                'noSpp': this.FILTER_SPP,
+                'noSpm': this.FILTER_SPM,
+                'noSp2d': this.FILTER_SP2D,
+                'key': this.FILTER_PENERIMA
+            };
+        }
+        const idx = Object.values(this.filterKeys).indexOf(type);
+        if (idx >= 0) {
+            return Object.keys(this.filterKeys)[idx];
+        }
+    }
+
     start() {
         return Work.works([
             () => this.open(),
@@ -202,22 +217,9 @@ class Sippol extends WebRobot {
 
     filterData(data, type = this.FILTER_SPM) {
         return new Promise((resolve, reject) => {
-            let m;
-            switch (type) {
-                case this.FILTER_SPP:
-                    m = 'noSpp';
-                    break;
-                case this.FILTER_SPM:
-                    m = 'noSpm';
-                    break;
-                case this.FILTER_SP2D:
-                    m = 'noSp2d';
-                    break;
-                case this.FILTER_PENERIMA:
-                    m = 'key';
-                    break;
-                default:
-                    return reject('Invalid filter type: ' + type);
+            const m = this.filterKey(type);
+            if (!m) {
+                return reject('Invalid filter type: ' + type);
             }
             this.waitFor(By.xpath('//input[@ng-model="vm._X_"]'.replace(/_X_/, m)))
                 .then((el) => {
