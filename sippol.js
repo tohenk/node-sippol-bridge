@@ -22,6 +22,7 @@
  * SOFTWARE.
  */
 
+const fs = require('fs');
 const {By, Key} = require('selenium-webdriver');
 const WebRobot = require('./lib/webrobot');
 const Queue = require('./lib/queue');
@@ -68,6 +69,12 @@ class Sippol extends WebRobot {
             SP2D_NOT_CAIR: 'sp2d-nocair',
             SP2D_CAIR: 'sp2d-cair',
         });
+        this.docs = Object.freeze({
+            REKENING: 'Daftar Rekening dari Bank Umum',
+            NPHD: 'Naskah Perjanjian Hibah Daerah (NPHD)',
+            PAKTA: 'Pakta Integritas',
+            LAIN: 'Dokumen kelengkapan lainnya',
+        });
     }
 
     pickPid(value) {
@@ -110,6 +117,14 @@ class Sippol extends WebRobot {
             return value;
         }
         return null;
+    }
+
+    getDocType(doc) {
+        for (let key in this.docs) {
+            if (doc.indexOf(this.docs[key]) == 0) {
+                return key;
+            }
+        }
     }
 
     filterKey(type) {
@@ -362,8 +377,8 @@ class Sippol extends WebRobot {
                             if (pager) {
                                 page++;
                                 if (page > pages) {
-                                    // if more than 1 page, go back to first page
-                                    if (pages > 1) {
+                                    // if more than 1 page, go back to first page if needed
+                                    if (pages > 1 && options.resetPage) {
                                         this.gotoPage(pager, 1)
                                             .then(() => resolve(retval))
                                         ;
@@ -802,6 +817,121 @@ class Sippol extends WebRobot {
             result.push(mapping);
         }
         return result;
+    }
+
+    uploadDocs(id, docs) {
+        let el, elements, result = {};
+        return Work.works([
+            () => new Promise((resolve, reject) => {
+                this.locateData(id)
+                    .then((xel) => {
+                        if (xel) {
+                            el = xel;
+                            resolve();
+                        } else {
+                            reject('SPP with id ' + id + ' is not found!');
+                        }
+                    })
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                this.click({el: el, data: By.xpath('../td[6]/span/span[@ng-show="spp.syaratId"]')})
+                    .then(() => resolve())
+                    .catch((err) => reject(err))
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                this.getDriver().findElements(By.xpath('//ul/li[@ng-repeat="dok in spp.doks"]'))
+                    .then((xelements) => {
+                        if (xelements.length) {
+                            elements = xelements;
+                            resolve();
+                        } else {
+                            reject('No document available!');
+                        }
+                    })
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                let idx = -1;
+                const q = new Queue(elements, (el) => {
+                    idx++;
+                    let xel, title, visible;
+                    Work.works([
+                        () => new Promise((resolve, reject) => {
+                            el.getText()
+                                .then((text) => {
+                                    title = text;
+                                    resolve();
+                                })
+                            ;
+                        }),
+                        () => new Promise((resolve, reject) => {
+                            el.findElement(By.xpath('./span[contains(@class,"glyphicon-download")]'))
+                                .then((d) => {
+                                    xel = d;
+                                    resolve();
+                                })
+                                .catch((err) => reject(err))
+                            ;
+                        }),
+                        () => new Promise((resolve, reject) => {
+                            xel.isDisplayed()
+                                .then((xvisible) => {
+                                    visible = xvisible;
+                                    resolve();
+                                })
+                            ;
+                        }),
+                        () => new Promise((resolve, reject) => {
+                            let doctype = this.getDocType(title);
+                            if (!doctype) {
+                                return resolve();
+                            }
+                            if (visible) {
+                                result[doctype] = 'Document already uploaded';
+                                return resolve();
+                            }
+                            if (docs[doctype] && fs.existsSync(docs[doctype])) {
+                                this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))
+                                    .then((files) => {
+                                        if (idx < files.length) {
+                                            console.log('Uploading document %s', docs[doctype]);
+                                            files[idx].sendKeys(docs[doctype])
+                                                .then(() => {
+                                                    // wait for upload to complete
+                                                    const waitUpload = () => {
+                                                        xel.isDisplayed()
+                                                            .then((visible) => {
+                                                                if (visible) {
+                                                                    result[doctype] = 'Document uploaded';
+                                                                    resolve();
+                                                                } else {
+                                                                    setTimeout(waitUpload, 100);
+                                                                }
+                                                            })
+                                                        ;
+                                                    }
+                                                    waitUpload();
+                                                })
+                                            ;
+                                        } else {
+                                            resolve();
+                                        }
+                                    })
+                                ;
+                            } else {
+                                resolve();
+                            }
+                        }),
+                    ])
+                        .then(() => q.next())
+                        .catch(() => q.next())
+                    ;
+                });
+                q.once('done', () => resolve(result));
+            }),
+        ]);
     }
 }
 

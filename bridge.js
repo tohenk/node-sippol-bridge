@@ -23,6 +23,8 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const util = require('util');
 const {Sippol} = require('./sippol');
 const Work = require('./lib/work');
@@ -59,53 +61,18 @@ class SippolBridge {
                     this.queue.next();
                 })
             ;
-        });
+        },
+        () => this.sippol.ready ? true : false);
     }
 
     processQueue(queue) {
         switch (queue.type) {
             case this.QUEUE_SPP:
-                // filter items with the same PENERIMA
-                const f = (items) => {
-                    let result = [];
-                    for (let i = 0; i < items.length; i++) {
-                        if (items[i].Status == this.sippol.SPP_BATAL) continue;
-                        if (items[i].Nominal == queue.data.JUMLAH) {
-                            result.push(items[i]);
-                        }
-                    }
-                    return result;
-                }
-                return this.do([
-                    () => new Promise((resolve, reject) => {
-                        this.getPenerima(queue.data.PENERIMA)
-                            .then((items) => {
-                                let matches = f(items);
-                                if (matches.length) {
-                                    reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
-                                } else {
-                                    resolve();
-                                }
-                            })
-                            .catch((err) => reject(err))
-                        ;
-                    }),
-                    () => this.sippol.createSpp(queue.data),
-                    () => new Promise((resolve, reject) => {
-                        this.getPenerima(queue.data.PENERIMA)
-                            .then((items) => {
-                                let matches = f(items);
-                                if (matches.length) {
-                                    this.addQueue(this.QUEUE_NOTIFY_SPP, items[0]);
-                                }
-                                resolve(items);
-                            })
-                            .catch((err) => reject(err))
-                        ;
-                    }),
-                ]);
+                return this.createSpp(queue.data);
             case this.QUEUE_NOTIFY_SPP:
                 return this.notifySpp(queue.data);
+            case this.QUEUE_UPLOAD:
+                return this.uploadDocs(queue.data);
         }
     }
 
@@ -148,13 +115,15 @@ class SippolBridge {
     }
 
     updateItems(items) {
-        for (let i = 0; i < items.length; i++) {
-            let pid = items[i].Id;
-            if (!pid) continue;
-            if (!this.items[pid]) {
-                this.items[pid] = items[i];
-            } else {
-                this.items[pid].copyFrom(items[i]);
+        if (items) {
+            for (let i = 0; i < items.length; i++) {
+                let pid = items[i].Id;
+                if (!pid) continue;
+                if (!this.items[pid]) {
+                    this.items[pid] = items[i];
+                } else {
+                    this.items[pid].copyFrom(items[i]);
+                }
             }
         }
     }
@@ -282,6 +251,50 @@ class SippolBridge {
         });
     }
 
+    createSpp(data) {
+        // filter items with the same PENERIMA
+        const f = (items) => {
+            let result = [];
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].Status == this.sippol.SPP_BATAL) continue;
+                    if (items[i].Nominal == data.JUMLAH) {
+                        result.push(items[i]);
+                    }
+                }
+            }
+            return result;
+        }
+        return this.do([
+            () => new Promise((resolve, reject) => {
+                this.getPenerima(data.PENERIMA)
+                    .then((items) => {
+                        let matches = f(items);
+                        if (matches.length) {
+                            reject('SPP for ' + data.PENERIMA + ' has been created!');
+                        } else {
+                            resolve();
+                        }
+                    })
+                    .catch((err) => reject(err))
+                ;
+            }),
+            () => this.sippol.createSpp(data),
+            () => new Promise((resolve, reject) => {
+                this.getPenerima(data.PENERIMA)
+                    .then((items) => {
+                        let matches = f(items);
+                        if (matches.length) {
+                            this.addQueue(this.QUEUE_NOTIFY_SPP, items[0]);
+                        }
+                        resolve(items);
+                    })
+                    .catch((err) => reject(err))
+                ;
+            }),
+        ]);
+    }
+
     notifySpp(data) {
         if (this.callback.length == 0) {
             return Promise.resolve();
@@ -318,7 +331,106 @@ class SippolBridge {
                 req.write(payload);
                 req.end();
             });
-            q.on('done', () => resolve(status));
+            q.once('done', () => resolve(status));
+        });
+    }
+
+    uploadDocs(data) {
+        let result;
+        const w = [];
+        const docs = {};
+        const mergefiles = [];
+        const doctypes = {
+            REKENING: false,
+            NPHD: false,
+            PAKTA: false,
+            KTPKETUA: true,
+            KTPBENDAHARA: true,
+            KWITANSI: true,
+            SPTJ: true,
+            RAB: true,
+            SPKONSULTAN: true,
+            SK: true
+        };
+        const doctmpdir = path.join(this.sippol.workdir, 'doctmp');
+        const docfname = (docname) => {
+            return path.join(doctmpdir, data.Id + '_' + docname.toLowerCase() + '.pdf');
+        }
+        // save documents to file
+        Object.keys(doctypes).forEach((doctype) => {
+            w.push(() => new Promise((resolve, reject) => {
+                const docfilename = docfname(doctype);
+                if (!fs.existsSync(doctmpdir)) fs.mkdirSync(doctmpdir);
+                if (fs.existsSync(docfilename)) fs.unlinkSync(docfilename);
+                this.saveDoc(docfilename, data[doctype])
+                    .then((filename) => {
+                        if (doctypes[doctype] == true) {
+                            mergefiles.push(filename);
+                        } else {
+                            docs[doctype] = filename;
+                        }
+                        resolve();
+                    })
+                    .catch(() => resolve())
+                ;
+            }));
+        });
+        // merged docs if necessary
+        w.push(() => new Promise((resolve, reject) => {
+            if (mergefiles.length == 0) {
+                resolve();
+            } else {
+                const merge = require('easy-pdf-merge');
+                const docfilename = docfname('lain');
+                merge(mergefiles, docfilename, (err) => {
+                    if (err) {
+                        console.error(err);
+                        return resolve();
+                    }
+                    docs.LAIN = docfilename;
+                    resolve();
+                });
+            }
+        }));
+        // upload docs
+        w.push(() => new Promise((resolve, reject) => {
+            this.sippol.uploadDocs(data.Id, docs)
+                .then((res) => {
+                    result = res;
+                    resolve();
+                })
+                .catch((err) => {
+                    result = err;
+                    resolve();
+                })
+            ;
+        }));
+        // cleanup files
+        w.push(() => new Promise((resolve, reject) => {
+            const files = [];
+            Array.prototype.push.apply(files, mergefiles);
+            Array.prototype.push.apply(files, Object.values(docs));
+            files.forEach((file) => {
+                if (fs.existsSync(file)) {
+                    fs.unlinkSync(file);
+                }
+            });
+            resolve(result);
+        }));
+        return this.do(w);
+    }
+
+    saveDoc(filename, data) {
+        return new Promise((resolve, reject) => {
+            if (data) {
+                const buffer = Buffer.from(data, 'base64');
+                fs.writeFile(filename, new Uint8Array(buffer), (err) => {
+                    if (err) return reject(err);
+                    resolve(filename);
+                });
+            } else {
+                reject();
+            }
         });
     }
 }

@@ -97,7 +97,7 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
             socket.emit('setup', {version: bridge.VERSION});
         });
         socket.on('spp', (data) => {
-            console.log('SPP: %s', JSON.stringify(data));
+            console.log('SPP: %s', data.NPWP);
             const res = bridge.addQueue(bridge.QUEUE_SPP, data);
             socket.emit('spp', res);
         });
