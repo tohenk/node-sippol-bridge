@@ -478,6 +478,34 @@ class Sippol extends WebRobot {
         });
     }
 
+    locateData(id) {
+        let match;
+        return this.eachData(
+            (el) => {
+                match = el;
+                return [];
+            },
+            () => Promise.resolve(match),
+            (elements) => new Promise((resolve, reject) => {
+                const matched = [];
+                const q = new Queue(elements, (el) => {
+                    this.retrDataIdFromRow(el)
+                        .then((xid) => {
+                            if (id == xid) {
+                                matched.push(el);
+                                q.done();
+                            } else {
+                                q.next();
+                            }
+                        });
+                });
+                q.once('done', () => {
+                    resolve(matched);
+                });
+            })
+        );
+    }
+
     fetchData(useForm = true) {
         let items = [];
         return this.eachData(
