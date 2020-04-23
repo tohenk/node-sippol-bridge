@@ -343,6 +343,7 @@ class Sippol extends WebRobot {
 
     each(options) {
         const check = options.check;
+        const filter = options.filter;
         const works = options.works;
         const done = options.done;
         const pager = options.pager;
@@ -356,85 +357,98 @@ class Sippol extends WebRobot {
             const w = () => {
                 this.getDriver().findElements(check)
                     .then((elements) => {
-                        // check if elements exists
-                        if (elements.length) {
-                            const q = new Queue(elements, (el) => {
-                                const f = () => {
-                                    const items = works(el);
-                                    if (options.click) items.push(() => el.click());
-                                    if (options.wait) items.push(() => this.sleep(this.delay));
-                                    Work.works(items)
-                                        .then(() => {
-                                            if (typeof done == 'function') {
-                                                done()
-                                                    .then((res) => {
-                                                        retval = res;
-                                                        q.next();
-                                                    })
-                                                    .catch((err) => {
-                                                        if (err instanceof Error) throw err;
-                                                    })
-                                                ;
+                        // handler to go to next page or resolve when no more pages
+                        const nextPageOrResolve = () => {
+                            if (pager) {
+                                page++;
+                                if (page > pages) {
+                                    // if more than 1 page, go back to first page
+                                    if (pages > 1) {
+                                        this.gotoPage(pager, 1)
+                                            .then(() => resolve(retval))
+                                        ;
+                                    } else {
+                                        resolve(retval);
+                                    }
+                                } else {
+                                    this.gotoPage(pager, page)
+                                        .then((el) => {
+                                            if (el) {
+                                                w();
                                             } else {
-                                                q.next();
+                                                resolve(retval);
                                             }
-                                        })
-                                        .catch((err) => {
-                                            if (err instanceof Error) throw err;
                                         })
                                     ;
                                 }
-                                if (options.visible) {
-                                    el.isDisplayed().then((visible) => {
-                                        if (visible) {
-                                            f();
-                                        } else {
-                                            q.next();
-                                        }
-                                    });
-                                } else {
-                                    f();
-                                }
-                            });
-                            q.once('done', () => {
-                                if (pager) {
-                                    page++;
-                                    if (page > pages) {
-                                        // if more than 1 page, go back to first page
-                                        if (pages > 1) {
-                                            this.gotoPage(pager, 1)
-                                                .then(() => resolve(retval))
-                                            ;
-                                        } else {
-                                            resolve(retval);
-                                        }
-                                    } else {
-                                        this.gotoPage(pager, page)
-                                            .then((el) => {
-                                                if (el) {
-                                                    w();
-                                                } else {
-                                                    resolve(retval);
-                                                }
+                            } else {
+                                resolve(retval);
+                            }
+                        }
+                        // handler to finish each iteration
+                        const finishEach = (next) => {
+                            if (typeof done == 'function') {
+                                done()
+                                    .then((res) => {
+                                        retval = res;
+                                        next();
+                                    })
+                                    .catch((err) => {
+                                        if (err instanceof Error) throw err;
+                                    })
+                                ;
+                            } else {
+                                next();
+                            }
+                        }
+                        // handler to process each elements
+                        const doit = (elements) => {
+                            // check if elements exists
+                            if (elements.length) {
+                                const q = new Queue(elements, (el) => {
+                                    const f = () => {
+                                        const items = works(el);
+                                        if (options.click) items.push(() => el.click());
+                                        if (options.wait) items.push(() => this.sleep(this.delay));
+                                        Work.works(items)
+                                            .then(() => {
+                                                finishEach(() => q.next());
+                                            })
+                                            .catch((err) => {
+                                                if (err instanceof Error) throw err;
                                             })
                                         ;
                                     }
-                                } else {
-                                    resolve(retval);
-                                }
-                            });
-                        } else {
-                            // no elements found
-                            // resolve by calling done function
-                            if (typeof done == 'function') {
-                                done()
-                                    .then((res) => resolve(res))
-                                    .catch((err) => reject(err))
-                                ;
+                                    if (options.visible) {
+                                        el.isDisplayed().then((visible) => {
+                                            if (visible) {
+                                                f();
+                                            } else {
+                                                q.next();
+                                            }
+                                        });
+                                    } else {
+                                        f();
+                                    }
+                                });
+                                q.once('done', () => nextPageOrResolve());
                             } else {
-                                // resolve with nothing
-                                resolve();
+                                // no elements found
+                                if (pager) {
+                                    nextPageOrResolve();
+                                } else {
+                                    finishEach(() => resolve(retval));
+                                }
                             }
+                        }
+                        // apply filter
+                        if (typeof filter == 'function') {
+                            filter(elements)
+                                .then((items) => doit(items))
+                                .catch((err) => reject(err))
+                            ;
+                        } else {
+                            doit(elements);
                         }
                     })
                     .catch((err) => reject(err))
@@ -453,14 +467,22 @@ class Sippol extends WebRobot {
         });
     }
 
-    fetchData(useForm = true) {
-        let items = [];
+    eachData(work, done, filter) {
         const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
         return this.each({
             check: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]/td[1]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
-            works: (el) => {
-                let data = new SippolData();
+            works: (el) => work(el),
+            done: done,
+            filter: filter
+        });
+    }
+
+    fetchData(useForm = true) {
+        let items = [];
+        return this.eachData(
+            (el) => {
+                const data = new SippolData();
                 return [
                     () => new Promise((resolve, reject) => {
                         this.retrData(el, data, useForm)
@@ -473,10 +495,8 @@ class Sippol extends WebRobot {
                     })
                 ];
             },
-            done: () => {
-                return Promise.resolve(items);
-            }
-        });
+            () => Promise.resolve(items)
+        );
     }
 
     retrData(el, data, useForm) {
@@ -586,14 +606,10 @@ class Sippol extends WebRobot {
     retrDataFromRow(el, data) {
         return Work.works([
             () => new Promise((resolve, reject) => {
-                el.findElement(By.xpath('./../td[2]'))
-                    .then((xel) => {
-                        xel.getAttribute('title')
-                            .then((title) => {
-                                data.Id = this.pickPid(title);
-                                resolve();
-                            })
-                        ;
+                this.retrDataIdFromRow(el)
+                    .then((id) => {
+                        data.Id = id;
+                        resolve();
                     })
                     .catch((err) => reject(err))
                 ;
@@ -619,6 +635,21 @@ class Sippol extends WebRobot {
                 ;
             })
         ]);
+    }
+
+    retrDataIdFromRow(el) {
+        return new Promise((resolve, reject) => {
+            el.findElement(By.xpath('./../td[2]'))
+                .then((xel) => {
+                    xel.getAttribute('title')
+                        .then((title) => {
+                            resolve(this.pickPid(title));
+                        })
+                    ;
+                })
+                .catch((err) => reject(err))
+            ;
+        });
     }
 
     createSpp(data) {
