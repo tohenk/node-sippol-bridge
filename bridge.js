@@ -22,6 +22,8 @@
  * SOFTWARE.
  */
 
+const crypto = require('crypto');
+const util = require('util');
 const {Sippol} = require('./sippol');
 const Work = require('./lib/work');
 const Queue = require('./lib/queue');
@@ -34,27 +36,41 @@ class SippolBridge {
     QUEUE_NOTIFY_SPP = 2
     QUEUE_UPLOAD = 3
 
+    STATUS_NEW = 1
+    STATUS_PROCESSING = 2
+    STATUS_DONE = 3
+    STATUS_ERROR = 4
+
     constructor(options) {
         this.sippol = new Sippol(options);
         this.items = {};
         this.callback = [];
+        this.queues = {};
         this.queue = new Queue([], (data) => {
+            this.setQueueStatus(data.id, this.STATUS_PROCESSING);
             this.processQueue(data)
-                .then(() => this.queue.next())
-                .catch(() => this.queue.next())
+                .then((res) => {
+                    this.setQueueResult(data.id, this.STATUS_DONE, res);
+                    this.queue.next();
+                })
+                .catch((err) => {
+                    if (err) console.error(err);
+                    this.setQueueResult(data.id, this.STATUS_ERROR, err);
+                    this.queue.next();
+                })
             ;
         });
     }
 
-    processQueue(data) {
-        switch (data.type) {
+    processQueue(queue) {
+        switch (queue.type) {
             case this.QUEUE_SPP:
                 // filter items with the same PENERIMA
                 const f = (items) => {
                     let result = [];
                     for (let i = 0; i < items.length; i++) {
                         if (items[i].Status == this.sippol.SPP_BATAL) continue;
-                        if (items[i].Nominal == data.spp.JUMLAH) {
+                        if (items[i].Nominal == queue.data.JUMLAH) {
                             result.push(items[i]);
                         }
                     }
@@ -62,11 +78,11 @@ class SippolBridge {
                 }
                 return this.do([
                     () => new Promise((resolve, reject) => {
-                        this.getPenerima(data.spp.PENERIMA)
+                        this.getPenerima(queue.data.PENERIMA)
                             .then((items) => {
                                 let matches = f(items);
                                 if (matches.length) {
-                                    reject('SPP for ' + data.spp.PENERIMA + ' has been created!');
+                                    reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
                                 } else {
                                     resolve();
                                 }
@@ -74,13 +90,13 @@ class SippolBridge {
                             .catch((err) => reject(err))
                         ;
                     }),
-                    () => this.sippol.createSpp(data.spp),
+                    () => this.sippol.createSpp(queue.data),
                     () => new Promise((resolve, reject) => {
-                        this.getPenerima(data.spp.PENERIMA)
+                        this.getPenerima(queue.data.PENERIMA)
                             .then((items) => {
                                 let matches = f(items);
                                 if (matches.length) {
-                                    this.queue.requeue([{type: this.QUEUE_NOTIFY_SPP, spp: items[0]}]);
+                                    this.addQueue(this.QUEUE_NOTIFY_SPP, items[0]);
                                 }
                                 resolve(items);
                             })
@@ -89,13 +105,45 @@ class SippolBridge {
                     }),
                 ]);
             case this.QUEUE_NOTIFY_SPP:
-                return this.notifySpp(data.spp);
+                return this.notifySpp(queue.data);
         }
+    }
+
+    genId() {
+        const shasum = crypto.createHash('sha1');
+        shasum.update(new Date().getTime().toString());
+        return shasum.digest('hex').substr(0, 8);
     }
 
     addCallback(url) {
         if (this.callback.indexOf(url) < 0) {
             this.callback.push(url);
+        }
+    }
+
+    addQueue(type, data) {
+        const id = this.genId();
+        const queue = {id: id, type: type, data: data, status: this.STATUS_NEW};
+        this.queue.requeue([queue]);
+        this.queues[id] = queue;
+
+        return {status: 'queued', id: id};
+    }
+
+    setQueueStatus(id, status) {
+        if (this.queues[id]) {
+            this.queues[id].status = status;
+            console.log('Queue status changed for %s(%d) => %d', id, this.queues[id].type,
+                this.queues[id].status);
+        }
+    }
+
+    setQueueResult(id, status, res) {
+        if (this.queues[id]) {
+            this.queues[id].status = status;
+            if (res) this.queues[id].result = res;
+            console.log('Queue result updated for %s(%d) => %s', id, this.queues[id].type,
+                this.queues[id].result ? this.queues[id].result : 'NONE');
         }
     }
 
@@ -151,21 +199,28 @@ class SippolBridge {
             w.push(works);
         }
         return new Promise((resolve, reject) => {
+            let result;
             const done = () => {
                 this.sippol.stop()
-                    .then(() => resolve())
-                    .catch(() => resolve())
+                    .then(() => resolve(result))
+                    .catch(() => resolve(result))
                 ;
             }
             Work.works(w)
-                .then(() => done())
-                .catch(() => done())
+                .then((res) => {
+                    result = res;
+                    done();
+                })
+                .catch((err) => {
+                    if (err) console.error(err);
+                    done();
+                })
             ;
         });
     }
 
     selfTest() {
-        return this.do(() => this.sippol.sleep());
+        return this.do(() => Promise.resolve());
     }
 
     fetch() {
@@ -190,20 +245,6 @@ class SippolBridge {
             () => this.sippol.sleep(this.sippol.opdelay),
             () => this.fetch()
         ]);
-    }
-
-    createSpp(data) {
-        if (data.NPWP) {
-            let items = this.getItemByNpwp(data.NPWP);
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].Status == this.sippol.SPP_BATAL) {
-                    continue;
-                }
-                return Promise.resolve({status: 'result', data: items[i]});
-            }
-        }
-        this.queue.requeue([{type: this.QUEUE_SPP, spp: data}]);
-        return Promise.resolve({status: 'queued'});
     }
 
     getSpp(id) {
@@ -246,6 +287,7 @@ class SippolBridge {
             return Promise.resolve();
         }
         return new Promise((resolve, reject) => {
+            let status;
             const q = new Queue(this.callback, (url) => {
                 const parsedUrl = require('url').parse(url);
                 const http = require('https:' == parsedUrl.protocol ? 'https' : 'http');
@@ -265,18 +307,18 @@ class SippolBridge {
                     });
                     res.on('end', () => {
                         if (result) {
-                            console.log('SPP notification %s => %s', url, result);
+                            status = util.format('SPP notification %s => %s', url, result);
                         }
                         q.next();
                     });
                 });
                 req.on('error', (e) => {
-                    console.error('Notification error %s: %s', url, e.message);
+                    status = util.format('Notification error %s: %s', url, e.message);
                 });
                 req.write(payload);
                 req.end();
             });
-            q.on('done', () => resolve());
+            q.on('done', () => resolve(status));
         });
     }
 }

@@ -98,16 +98,20 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
         });
         socket.on('spp', (data) => {
             console.log('SPP: %s', JSON.stringify(data));
-            bridge.createSpp(data)
-                .then((result) => {
-                    socket.emit('spp', result);
-                })
-                .catch((err) => {
-                    socket.emit('spp', {error: err})
-                })
-            ;
+            const res = bridge.addQueue(bridge.QUEUE_SPP, data);
+            socket.emit('spp', res);
         });
         socket.on('upload', (data) => {
+            let res;
+            if (data.Id) {
+                console.log('Upload: %s', data.Id);
+                res = bridge.addQueue(bridge.QUEUE_UPLOAD, data);
+            } else {
+                const msg = 'Ignoring upload without Id';
+                console.log(msg);
+                res = {error: msg}
+            }
+            socket.emit('upload', res);
         });
         socket.on('query', (id) => {
             console.log('Query: %s', id);
