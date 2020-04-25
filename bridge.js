@@ -34,30 +34,28 @@ class SippolBridge {
 
     VERSION = 'SIPPOL-BRIDGE-1.0'
 
-    QUEUE_SPP = 1
-    QUEUE_NOTIFY_SPP = 2
-    QUEUE_UPLOAD = 3
-
-    STATUS_NEW = 1
-    STATUS_PROCESSING = 2
-    STATUS_DONE = 3
-    STATUS_ERROR = 4
-
     constructor(options) {
         this.sippol = new Sippol(options);
         this.items = {};
-        this.callback = [];
-        this.queues = {};
-        this.queue = new Queue([], (data) => {
-            this.setQueueStatus(data.id, this.STATUS_PROCESSING);
-            this.processQueue(data)
+        this.queues = [];
+        this.queue = new Queue([], (queue) => {
+            queue.setStatus(SippolQueue.STATUS_PROCESSING);
+            this.processQueue(queue)
                 .then((res) => {
-                    this.setQueueResult(data.id, this.STATUS_DONE, res);
+                    queue.setStatus(SippolQueue.STATUS_DONE);
+                    queue.setResult(res);
+                    if (typeof queue.resolve == 'function') {
+                        queue.resolve(res);
+                    }
                     this.queue.next();
                 })
                 .catch((err) => {
                     if (err) console.error(err);
-                    this.setQueueResult(data.id, this.STATUS_ERROR, err);
+                    queue.setStatus(SippolQueue.STATUS_ERROR);
+                    queue.setResult(err);
+                    if (typeof queue.reject == 'function') {
+                        queue.reject(err);
+                    }
                     this.queue.next();
                 })
             ;
@@ -67,12 +65,18 @@ class SippolBridge {
 
     processQueue(queue) {
         switch (queue.type) {
-            case this.QUEUE_SPP:
-                return this.createSpp(queue.data);
-            case this.QUEUE_NOTIFY_SPP:
-                return this.notifySpp(queue.data);
-            case this.QUEUE_UPLOAD:
-                return this.uploadDocs(queue.data);
+            case SippolQueue.QUEUE_SPP:
+                return this.createSpp(queue);
+            case SippolQueue.QUEUE_NOTIFY_SPP:
+                return this.notifySpp(queue);
+            case SippolQueue.QUEUE_UPLOAD:
+                return this.uploadDocs(queue);
+            case SippolQueue.QUEUE_QUERY:
+                return this.query(queue);
+            case SippolQueue.QUEUE_LIST:
+                return this.listSpp(queue);
+            case SippolQueue.QUEUE_NOTIFY_LIST:
+                return this.notifyListSpp(queue);
         }
     }
 
@@ -82,36 +86,12 @@ class SippolBridge {
         return shasum.digest('hex').substr(0, 8);
     }
 
-    addCallback(url) {
-        if (this.callback.indexOf(url) < 0) {
-            this.callback.push(url);
-        }
-    }
-
-    addQueue(type, data) {
+    addQueue(queue) {
         const id = this.genId();
-        const queue = {id: id, type: type, data: data, status: this.STATUS_NEW};
+        queue.setId(id);
+        this.queues.push(queue);
         this.queue.requeue([queue]);
-        this.queues[id] = queue;
-
         return {status: 'queued', id: id};
-    }
-
-    setQueueStatus(id, status) {
-        if (this.queues[id]) {
-            this.queues[id].status = status;
-            console.log('Queue status changed for %s(%d) => %d', id, this.queues[id].type,
-                this.queues[id].status);
-        }
-    }
-
-    setQueueResult(id, status, res) {
-        if (this.queues[id]) {
-            this.queues[id].status = status;
-            if (res) this.queues[id].result = res;
-            console.log('Queue result updated for %s(%d) => %s', id, this.queues[id].type,
-                this.queues[id].result ? this.queues[id].result : 'NONE');
-        }
     }
 
     updateItems(items) {
@@ -133,6 +113,26 @@ class SippolBridge {
         for (let pid in this.items) {
             if (this.items[pid].NPWP == value) {
                 result.push(this.items[pid]);
+            }
+        }
+        return result;
+    }
+
+    filterItems(items, filter) {
+        const result = [];
+        if (items) {
+            filter = filter || {};
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].Status == this.sippol.SPP_BATAL) {
+                    continue;
+                }
+                if (filter.nominal && items[i].Nominal != filter.nominal) {
+                    continue;
+                }
+                if (filter.year && (!items[i].SPPTanggal || items[i].SPPTanggal.indexOf(filter.year) != 0)) {
+                    continue;
+                }
+                result.push(items[i]);
             }
         }
         return result;
@@ -204,7 +204,8 @@ class SippolBridge {
         });
     }
 
-    list() {
+    list(clear = false) {
+        if (clear) this.items = {};
         return this.do(() => this.fetch());
     }
 
@@ -216,62 +217,79 @@ class SippolBridge {
         ]);
     }
 
-    getSpp(id) {
+    notifyCallback(url, data) {
         return new Promise((resolve, reject) => {
-            let items = this.getItemByNpwp(id);
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].Status == this.sippol.SPP_BATAL) {
-                    continue;
+            let status, result;
+            const parsedUrl = require('url').parse(url);
+            const http = require('https:' == parsedUrl.protocol ? 'https' : 'http');
+            const payload = JSON.stringify(data);
+            const options = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
                 }
-                return resolve(items[i]);
             }
-            resolve();
+            const req = http.request(url, options, (res) => {
+                res.setEncoding('utf8');
+                res.on('data', (chunk) => {
+                    result = chunk;
+                });
+                res.on('end', () => {
+                    if (result) {
+                        status = util.format('Callback %s => %s', url, result);
+                    }
+                    resolve(status);
+                });
+            });
+            req.on('error', (e) => {
+                status = util.format('Callback error %s: %s', url, e.message);
+            });
+            req.write(payload);
+            req.end();
         });
     }
 
-    getSpps(year) {
+    query(queue) {
+        return this.do(() => new Promise((resolve, reject) => {
+            this.getPenerima(queue.data.term)
+                .then((items) => {
+                    const matches = this.filterItems(items);
+                    resolve(matches);
+                })
+                .catch((err) => reject(err))
+            ;
+        }));
+    }
+
+    listSpp(queue) {
         return new Promise((resolve, reject) => {
-            let result = [];
-            try {
-                for (let pid in this.items) {
-                    if (this.items[pid].Status == this.sippol.SPP_BATAL) {
-                        continue;
+            this.list()
+                .then((items) => {
+                    const matches = this.filterItems(items, {year: queue.data.year});
+                    if (matches.length && queue.callback) {
+                        const notifyListQueue = SippolQueue.createNotifyListQueue(matches, queue.callback);
+                        this.addQueue(notifyListQueue);
                     }
-                    if (this.items[pid].SPPTanggal && this.items[pid].SPPTanggal.indexOf(year) != 0) {
-                        continue;
-                    }
-                    result.push(this.items[pid]);
-                }
-                resolve(result);
-            }
-            catch (err) {
-                console.error(err);
-            }
-            resolve(result);
+                    resolve(matches);
+                })
+                .catch((err) => reject(err))
+            ;
         });
     }
 
-    createSpp(data) {
-        // filter items with the same PENERIMA
-        const f = (items) => {
-            let result = [];
-            if (items) {
-                for (let i = 0; i < items.length; i++) {
-                    if (items[i].Status == this.sippol.SPP_BATAL) continue;
-                    if (items[i].Nominal == data.JUMLAH) {
-                        result.push(items[i]);
-                    }
-                }
-            }
-            return result;
-        }
+    notifyListSpp(queue) {
+        return this.notifyCallback(queue.callback, {items: queue.data});
+    }
+
+    createSpp(queue) {
         return this.do([
             () => new Promise((resolve, reject) => {
-                this.getPenerima(data.PENERIMA)
+                this.getPenerima(queue.data.PENERIMA)
                     .then((items) => {
-                        let matches = f(items);
+                        const matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length) {
-                            reject('SPP for ' + data.PENERIMA + ' has been created!');
+                            reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
                         } else {
                             resolve();
                         }
@@ -279,13 +297,14 @@ class SippolBridge {
                     .catch((err) => reject(err))
                 ;
             }),
-            () => this.sippol.createSpp(data),
+            () => this.sippol.createSpp(queue.data),
             () => new Promise((resolve, reject) => {
-                this.getPenerima(data.PENERIMA)
+                this.getPenerima(queue.data.PENERIMA)
                     .then((items) => {
-                        let matches = f(items);
-                        if (matches.length) {
-                            this.addQueue(this.QUEUE_NOTIFY_SPP, items[0]);
+                        const matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
+                        if (matches.length && queue.callback) {
+                            const notifyQueue = SippolQueue.createNotifySppQueue(items[0], queue.callback);
+                            this.addQueue(notifyQueue);
                         }
                         resolve(items);
                     })
@@ -295,47 +314,11 @@ class SippolBridge {
         ]);
     }
 
-    notifySpp(data) {
-        if (this.callback.length == 0) {
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            let status;
-            const q = new Queue(this.callback, (url) => {
-                const parsedUrl = require('url').parse(url);
-                const http = require('https:' == parsedUrl.protocol ? 'https' : 'http');
-                const payload = JSON.stringify({spp: data});
-                const options = {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(payload)
-                    }
-                }
-                let result;
-                const req = http.request(url, options, (res) => {
-                    res.setEncoding('utf8');
-                    res.on('data', (chunk) => {
-                        result = chunk;
-                    });
-                    res.on('end', () => {
-                        if (result) {
-                            status = util.format('SPP notification %s => %s', url, result);
-                        }
-                        q.next();
-                    });
-                });
-                req.on('error', (e) => {
-                    status = util.format('Notification error %s: %s', url, e.message);
-                });
-                req.write(payload);
-                req.end();
-            });
-            q.once('done', () => resolve(status));
-        });
+    notifySpp(queue) {
+        return this.notifyCallback(queue.callback, {spp: queue.data});
     }
 
-    uploadDocs(data) {
+    uploadDocs(queue) {
         let result;
         const w = [];
         const docs = {};
@@ -354,7 +337,7 @@ class SippolBridge {
         };
         const doctmpdir = path.join(this.sippol.workdir, 'doctmp');
         const docfname = (docname) => {
-            return path.join(doctmpdir, data.Id + '_' + docname.toLowerCase() + '.pdf');
+            return path.join(doctmpdir, queue.data.Id + '_' + docname.toLowerCase() + '.pdf');
         }
         // save documents to file
         Object.keys(doctypes).forEach((doctype) => {
@@ -362,7 +345,7 @@ class SippolBridge {
                 const docfilename = docfname(doctype);
                 if (!fs.existsSync(doctmpdir)) fs.mkdirSync(doctmpdir);
                 if (fs.existsSync(docfilename)) fs.unlinkSync(docfilename);
-                this.saveDoc(docfilename, data[doctype])
+                this.saveDoc(docfilename, queue.data[doctype])
                     .then((filename) => {
                         if (doctypes[doctype] == true) {
                             mergefiles.push(filename);
@@ -375,7 +358,7 @@ class SippolBridge {
                 ;
             }));
         });
-        // merged docs if necessary
+        // merge docs if necessary
         w.push(() => new Promise((resolve, reject) => {
             if (mergefiles.length == 0) {
                 resolve();
@@ -394,7 +377,7 @@ class SippolBridge {
         }));
         // upload docs
         w.push(() => new Promise((resolve, reject) => {
-            this.sippol.uploadDocs(data.Id, docs)
+            this.sippol.uploadDocs(queue.data.Id, docs)
                 .then((res) => {
                     result = res;
                     resolve();
@@ -435,4 +418,122 @@ class SippolBridge {
     }
 }
 
-module.exports = SippolBridge;
+class SippolQueue
+{
+    constructor() {
+        this.status = SippolQueue.STATUS_NEW;
+    }
+
+    setType(type) {
+        this.type = type;
+    }
+
+    setId(id) {
+        this.id = id;
+    }
+
+    setData(data) {
+        this.data = data;
+    }
+
+    setCallback(callback) {
+        this.callback = callback;
+    }
+
+    setStatus(status) {
+        if (this.status != status) {
+            this.status = status;
+            console.log('Queue status %s:%s => %s', this.getTypeText(), this.id, this.getStatusText());
+        }
+    }
+
+    setResult(result) {
+        if (this.result != result) {
+            this.result = result;
+            console.log('Queue result %s:%s => %s', this.getTypeText(), this.id, this.result);
+        }
+    }
+
+    getTextFromId(id, values) {
+        return Object.keys(values)[Object.values(values).indexOf(id)];
+    }
+
+    getTypeText()
+    {
+        if (!this.types) {
+            this.types = Object.freeze({
+                'spp': SippolQueue.QUEUE_SPP,
+                'spp-notify': SippolQueue.QUEUE_NOTIFY_SPP,
+                'upload': SippolQueue.QUEUE_UPLOAD,
+                'query': SippolQueue.QUEUE_QUERY,
+                'list': SippolQueue.QUEUE_LIST,
+                'list-notify': SippolQueue.QUEUE_NOTIFY_LIST,
+            });
+        }
+        return this.getTextFromId(this.type, this.types);
+    }
+
+    getStatusText()
+    {
+        if (!this.statuses) {
+            this.statuses = Object.freeze({
+                'new': SippolQueue.STATUS_NEW,
+                'processing': SippolQueue.STATUS_PROCESSING,
+                'done': SippolQueue.STATUS_DONE,
+                'error': SippolQueue.STATUS_ERROR,
+            });
+        }
+        return this.getTextFromId(this.status, this.statuses);
+    }
+
+    static create(type, data, callback = null) {
+        const queue = new SippolQueue();
+        queue.setType(type);
+        queue.setData(data);
+        if (callback) {
+            queue.callback = callback;
+        }
+        return queue;
+    }
+
+    static createSppQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_SPP, data, callback);
+    }
+
+    static createNotifySppQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_NOTIFY_SPP, data, callback);
+    }
+
+    static createUploadQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_UPLOAD, data, callback);
+    }
+
+    static createQueryQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_QUERY, data, callback);
+    }
+
+    static createListQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_LIST, data, callback);
+    }
+
+    static createNotifyListQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_NOTIFY_LIST, data, callback);
+    }
+
+    static get QUEUE_SPP() { return 1 }
+    static get QUEUE_NOTIFY_SPP() {return 2 }
+    static get QUEUE_UPLOAD() { return 3 }
+    static get QUEUE_QUERY() {return 4 }
+    static get QUEUE_LIST() {return 5 }
+    static get QUEUE_NOTIFY_LIST() {return 6 }
+
+    static get STATUS_NEW() { return 1 }
+    static get STATUS_PROCESSING() { return 2 }
+    static get STATUS_DONE() { return 3 }
+    static get STATUS_ERROR() { return 4 }
+}
+
+module.exports = {
+    SippolBridge: SippolBridge,
+    SippolQueue: SippolQueue
+}

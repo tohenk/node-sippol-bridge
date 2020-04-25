@@ -81,7 +81,7 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
     }
 
     const port = Cmd.get('port') | 3000;
-    const SippolBridge = require('./bridge');
+    const {SippolBridge, SippolQueue} = require('./bridge');
     const bridge = new SippolBridge(config);
     const http = require('http').createServer();
     const io = require('socket.io')(http);
@@ -92,20 +92,22 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
         });
         socket.on('setup', (data) => {
             if (data.callback) {
-                bridge.addCallback(data.callback);
+                socket.callback = data.callback;
             }
             socket.emit('setup', {version: bridge.VERSION});
         });
         socket.on('spp', (data) => {
             console.log('SPP: %s', data.NPWP);
-            const res = bridge.addQueue(bridge.QUEUE_SPP, data);
+            const queue = SippolQueue.createSppQueue(data, socket.callback);
+            const res = bridge.addQueue(queue);
             socket.emit('spp', res);
         });
         socket.on('upload', (data) => {
             let res;
             if (data.Id) {
                 console.log('Upload: %s', data.Id);
-                res = bridge.addQueue(bridge.QUEUE_UPLOAD, data);
+                const queue = SippolQueue.createUploadQueue(data, socket.callback);
+                res = bridge.addQueue(queue);
             } else {
                 const msg = 'Ignoring upload without Id';
                 console.log(msg);
@@ -113,19 +115,27 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
             }
             socket.emit('upload', res);
         });
-        socket.on('query', (id) => {
-            console.log('Query: %s', id);
-            bridge.getSpp(id)
-                .then((res) => {
-                    if (res) {
-                        socket.emit('query', {id: id, success: true, result: res});
-                    } else {
-                        socket.emit('query', {id: id, success: false});
-                    }
+        socket.on('query', (data) => {
+            console.log('Query: %s', data.term);
+            const f = () => new Promise((resolve, reject) => {
+                const queue = SippolQueue.createQueryQueue({term: data.term}, socket.callback);
+                queue.resolve = resolve;
+                queue.reject = reject;
+                bridge.addQueue(queue);
+            });
+            f()
+                .then((items) => {
+                    socket.emit('query', {result: items});
+                })
+                .catch((err) => {
+                    socket.emit('query', {error: err instanceof Error ? err.message : err});
                 })
             ;
         });
-        socket.on('list', (year) => {
+        socket.on('list', (data) => {
+            const queue = SippolQueue.createListQueue({year: data.year}, socket.callback);
+            const res = bridge.addQueue(queue);
+            socket.emit('list', res);
         });
     });
     http.listen(port, () => {
