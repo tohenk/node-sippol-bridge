@@ -712,6 +712,27 @@ class Sippol extends WebRobot {
         ]);
     }
 
+    updateSpp(id, data) {
+        return new Promise((resolve, reject) => {
+            this.locateData(id)
+                .then((el) => {
+                    if (el) {
+                        Work.works([
+                            () => this.clickEditSppButton(el),
+                            () => this.sleep(this.opdelay),
+                            () => this.fillSppForm(data),
+                        ])
+                            .then(() => resolve())
+                            .catch((err) => reject(err))
+                        ;
+                    } else {
+                        reject('SPP with id ' + id + ' not found!');
+                    }
+                })
+            ;
+        });
+    }
+
     clickAddSppButton() {
         return this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[1]/button[@ng-click="vm.sppAdd()"]'));
     }
@@ -760,10 +781,26 @@ class Sippol extends WebRobot {
             let xpath = By.xpath('//div[@id="agrTab"]/ul/li[@index="' + tabIdx + '"]/a');
             w.push(() => this.waitAndClick(xpath));
             if (key == 'rincian') {
-                w.push(() => this.waitAndClick(By.xpath('//button[@ng-click="vm.trsRekAdd()"]')));
-                w.push(() => this.fillInForm(forms[key], By.xpath('//h4[@id="myTrsRekLabel"]'),
-                    By.xpath('//h4[@id="myTrsRekLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]')
-                ));
+                // process only once
+                w.push(() => new Promise((resolve, reject) => {
+                    this.getDriver().findElements(By.xpath('//tr[@ng-repeat="trsRek in vm.trsReks track by trsRek.id"]'))
+                        .then((elements) => {
+                            if (!elements.length) {
+                                Work.works([
+                                    () => this.waitAndClick(By.xpath('//button[@ng-click="vm.trsRekAdd()"]')),
+                                    () => this.fillInForm(forms[key], By.xpath('//h4[@id="myTrsRekLabel"]'),
+                                        By.xpath('//h4[@id="myTrsRekLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]')
+                                    ),
+                                ])
+                                    .then(() => resolve())
+                                    .catch((err) => reject(err))
+                                ;
+                            } else {
+                                resolve();
+                            }
+                        })
+                    ;
+                }));
             } else {
                 w.push(() => this.fillInForm(forms[key], xpath));
             }

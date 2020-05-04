@@ -126,6 +126,9 @@ class SippolBridge {
                 if (items[i].Status == this.sippol.SPP_BATAL) {
                     continue;
                 }
+                if (filter.status && items[i].Status != filter.status) {
+                    continue;
+                }
                 if (filter.nominal && items[i].Nominal != filter.nominal) {
                     continue;
                 }
@@ -283,27 +286,44 @@ class SippolBridge {
     }
 
     createSpp(queue) {
+        let id, matches;
         return this.do([
             () => new Promise((resolve, reject) => {
                 this.getPenerima(queue.data.PENERIMA)
                     .then((items) => {
-                        const matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
+                        matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length) {
-                            reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
-                        } else {
-                            resolve();
+                            return reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
                         }
+                        // try to edit incomplete SPP
+                        matches = this.filterItems(items, {nominal: 0, status: this.sippol.SPP_DRAFT});
+                        if (matches.length) {
+                            id = matches[0].Id;
+                        }
+                        resolve();
                     })
                     .catch((err) => reject(err))
                 ;
             }),
-            () => this.sippol.createSpp(queue.data),
+            () => new Promise((resolve, reject) => {
+                if (!id) {
+                    this.sippol.createSpp(queue.data)
+                        .then(() => resolve())
+                        .catch((err) => reject(err))
+                    ;
+                } else {
+                    this.sippol.updateSpp(id, queue.data)
+                        .then(() => resolve())
+                        .catch((err) => reject(err))
+                    ;
+                }
+            }),
             () => new Promise((resolve, reject) => {
                 this.getPenerima(queue.data.PENERIMA)
                     .then((items) => {
-                        const matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
+                        matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length && queue.callback) {
-                            const notifyQueue = SippolQueue.createNotifySppQueue(items[0], queue.callback);
+                            const notifyQueue = SippolQueue.createNotifySppQueue(matches[0], queue.callback);
                             this.addQueue(notifyQueue);
                         }
                         resolve(items);
