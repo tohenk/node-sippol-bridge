@@ -404,6 +404,10 @@ class SippolBridge {
             this.sippol.uploadDocs(queue.data.Id, docs)
                 .then((res) => {
                     result = res;
+                    if (res && queue.callback) {
+                        const notifyQueue = SippolQueue.createNotifySppQueue({Id: queue.data.Id, docs: res}, queue.callback);
+                        this.addQueue(notifyQueue);
+                    }
                     resolve();
                 })
                 .catch((err) => {

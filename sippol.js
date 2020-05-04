@@ -970,7 +970,8 @@ class Sippol extends WebRobot {
                                 return resolve();
                             }
                             if (visible) {
-                                result[doctype] = 'Document already uploaded';
+                                if (!result.skipped) result.skipped = [];
+                                result.skipped.push(doctype);
                                 return resolve();
                             }
                             if (docs[doctype] && fs.existsSync(docs[doctype])) {
@@ -985,7 +986,8 @@ class Sippol extends WebRobot {
                                                         xel.isDisplayed()
                                                             .then((visible) => {
                                                                 if (visible) {
-                                                                    result[doctype] = 'Document uploaded';
+                                                                    if (!result.updated) result.updated = [];
+                                                                    result.updated.push(doctype);
                                                                     resolve();
                                                                 } else {
                                                                     setTimeout(waitUpload, 100);
