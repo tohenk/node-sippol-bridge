@@ -339,7 +339,7 @@ class SippolBridge {
     }
 
     notifySpp(queue) {
-        return this.notifyCallback(queue.callback, {spp: queue.data});
+        return this.notifyCallback(queue.callback, queue.data.docs ? queue.data : {spp: queue.data});
     }
 
     uploadDocs(queue) {
