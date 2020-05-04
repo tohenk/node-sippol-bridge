@@ -293,6 +293,10 @@ class SippolBridge {
                     .then((items) => {
                         matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length) {
+                            if (queue.callback) {
+                                const notifyQueue = SippolQueue.createNotifySppQueue(matches[0], queue.callback);
+                                this.addQueue(notifyQueue);
+                            }
                             return reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
                         }
                         // try to edit incomplete SPP
