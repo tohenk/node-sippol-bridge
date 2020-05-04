@@ -570,8 +570,7 @@ class Sippol extends WebRobot {
 
     retrDataFromForm(el, data) {
         return Work.works([
-            () => el.click(),
-            () => this.click({el: el, data: By.xpath('./../td[9]/button[@ng-click="vm.sppEdit(spp)"]')}),
+            () => this.clickEditSppButton(el),
             () => this.getValuesFromSppForm(data),
         ]);
     }
@@ -715,6 +714,41 @@ class Sippol extends WebRobot {
 
     clickAddSppButton() {
         return this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[1]/button[@ng-click="vm.sppAdd()"]'));
+    }
+
+    clickEditSppButton(el) {
+        let rel;
+        let needClick = true;
+        return Work.works([
+            () => new Promise((resolve, reject) => {
+                el.findElement(By.xpath('./..'))
+                    .then((xel) => {
+                        rel = xel;
+                        resolve();
+                    })
+                    .catch((err) => reject(err))
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                rel.getAttribute('class')
+                    .then((xclass) => {
+                        if (xclass == 'info') needClick = false;
+                        resolve();
+                    })
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                if (needClick) {
+                    el.click()
+                        .then(() => resolve())
+                        .catch((err) => reject(err))
+                    ;
+                } else {
+                    resolve();
+                }
+            }),
+            () => this.click({el: el, data: By.xpath('./../td[9]/button[@ng-click="vm.sppEdit(spp)"]')}),
+        ]);
     }
 
     fillSppForm(data) {
