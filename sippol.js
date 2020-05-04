@@ -365,6 +365,7 @@ class Sippol extends WebRobot {
         if (options.click == undefined) options.click = true;
         if (options.wait == undefined) options.wait = true;
         if (options.visible == undefined) options.visible = false;
+        if (options.direction == undefined) options.direction = 1;
         return new Promise((resolve, reject) => {
             let retval;
             let page = 1;
@@ -373,10 +374,10 @@ class Sippol extends WebRobot {
                 this.getDriver().findElements(check)
                     .then((elements) => {
                         // handler to go to next page or resolve when no more pages
-                        const nextPageOrResolve = () => {
-                            if (pager) {
-                                page++;
-                                if (page > pages) {
+                        const nextPageOrResolve = (next = true) => {
+                            if (next && pager) {
+                                page += options.direction;
+                                if ((options.direction > 0 && page > pages) || (options.direction < 0 && page < 1)) {
                                     // if more than 1 page, go back to first page if needed
                                     if (pages > 1 && options.resetPage) {
                                         this.gotoPage(pager, 1)
@@ -417,7 +418,7 @@ class Sippol extends WebRobot {
                             }
                         }
                         // handler to process each elements
-                        const doit = (elements) => {
+                        const doit = (elements, next = true) => {
                             // check if elements exists
                             if (elements.length) {
                                 const q = new Queue(elements, (el) => {
@@ -446,7 +447,7 @@ class Sippol extends WebRobot {
                                         f();
                                     }
                                 });
-                                q.once('done', () => nextPageOrResolve());
+                                q.once('done', () => nextPageOrResolve(next));
                             } else {
                                 // no elements found
                                 if (pager) {
@@ -459,7 +460,7 @@ class Sippol extends WebRobot {
                         // apply filter
                         if (typeof filter == 'function') {
                             filter(elements)
-                                .then((items) => doit(items))
+                                .then((items) => doit(items, false))
                                 .catch((err) => reject(err))
                             ;
                         } else {
@@ -473,7 +474,14 @@ class Sippol extends WebRobot {
                 this.getPages(pager)
                     .then((result) => {
                         [pages] = result;
-                        w();
+                        if (options.direction < 0) {
+                            page = pages;
+                            this.gotoPage(pager, page)
+                                .then(() => w())
+                            ;
+                        } else {
+                            w();
+                        }
                     })
                 ;
             } else {
@@ -482,14 +490,15 @@ class Sippol extends WebRobot {
         });
     }
 
-    eachData(work, done, filter) {
+    eachData(work, done, filter, direction = 1) {
         const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
         return this.each({
             check: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]/td[1]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
             works: (el) => work(el),
             done: done,
-            filter: filter
+            filter: filter,
+            direction: direction
         });
     }
 
@@ -517,7 +526,8 @@ class Sippol extends WebRobot {
                 q.once('done', () => {
                     resolve(matched);
                 });
-            })
+            }),
+            -1 // start from last page
         );
     }
 
