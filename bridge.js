@@ -290,7 +290,21 @@ class SippolBridge {
                         matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length) {
                             if (queue.callback) {
-                                const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
+                                let idx = -1;
+                                // compare datakey
+                                if (this.datakey) {
+                                    for (let i = 0; i < matches.length; i++) {
+                                        if (matches[i][this.datakey] == queue.data[this.datakey]) {
+                                            idx = i;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (idx < 0) idx = 0;
+                                const callbackQueue = SippolQueue.createCallbackQueue({
+                                    spp: matches[idx],
+                                    ref: queue.data[this.datakey] ? queue.data[this.datakey] : null
+                                }, queue.callback);
                                 this.addQueue(callbackQueue);
                             }
                             return reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
