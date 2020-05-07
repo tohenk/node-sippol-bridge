@@ -35,7 +35,7 @@ class SippolBridge {
     VERSION = 'SIPPOL-BRIDGE-1.0'
 
     constructor(options) {
-        this.sippol = new Sippol(options);
+        this.sippol = new Sippol(this.getOptions(options));
         this.items = {};
         this.queues = [];
         this.queue = new Queue([], (queue) => {
@@ -61,6 +61,14 @@ class SippolBridge {
             ;
         },
         () => this.sippol.ready ? true : false);
+    }
+
+    getOptions(options) {
+        if (options.datakey) {
+            this.datakey = options.datakey;
+            delete options.datakey;
+        }
+        return options;
     }
 
     processQueue(queue) {
@@ -106,16 +114,6 @@ class SippolBridge {
                 }
             }
         }
-    }
-
-    getItemByNpwp(value) {
-        let result = [];
-        for (let pid in this.items) {
-            if (this.items[pid].NPWP == value) {
-                result.push(this.items[pid]);
-            }
-        }
-        return result;
     }
 
     filterItems(items, filter) {
