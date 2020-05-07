@@ -75,16 +75,14 @@ class SippolBridge {
         switch (queue.type) {
             case SippolQueue.QUEUE_SPP:
                 return this.createSpp(queue);
-            case SippolQueue.QUEUE_NOTIFY_SPP:
-                return this.notifySpp(queue);
             case SippolQueue.QUEUE_UPLOAD:
                 return this.uploadDocs(queue);
             case SippolQueue.QUEUE_QUERY:
                 return this.query(queue);
             case SippolQueue.QUEUE_LIST:
                 return this.listSpp(queue);
-            case SippolQueue.QUEUE_NOTIFY_LIST:
-                return this.notifyListSpp(queue);
+            case SippolQueue.QUEUE_CALLBACK:
+                return this.notify(queue);
         }
     }
 
@@ -251,6 +249,10 @@ class SippolBridge {
         });
     }
 
+    notify(queue) {
+        return this.notifyCallback(queue.callback, queue.data);
+    }
+
     query(queue) {
         return this.do(() => new Promise((resolve, reject) => {
             this.getPenerima(queue.data.term)
@@ -269,18 +271,14 @@ class SippolBridge {
                 .then((items) => {
                     const matches = this.filterItems(items, {year: queue.data.year});
                     if (matches.length && queue.callback) {
-                        const notifyListQueue = SippolQueue.createNotifyListQueue(matches, queue.callback);
-                        this.addQueue(notifyListQueue);
+                        const callbackQueue = SippolQueue.createCallbackQueue({items: matches}, queue.callback);
+                        this.addQueue(callbackQueue);
                     }
                     resolve(matches);
                 })
                 .catch((err) => reject(err))
             ;
         });
-    }
-
-    notifyListSpp(queue) {
-        return this.notifyCallback(queue.callback, {items: queue.data});
     }
 
     createSpp(queue) {
@@ -292,8 +290,8 @@ class SippolBridge {
                         matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length) {
                             if (queue.callback) {
-                                const notifyQueue = SippolQueue.createNotifySppQueue(matches[0], queue.callback);
-                                this.addQueue(notifyQueue);
+                                const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
+                                this.addQueue(callbackQueue);
                             }
                             return reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
                         }
@@ -325,8 +323,8 @@ class SippolBridge {
                     .then((items) => {
                         matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
                         if (matches.length && queue.callback) {
-                            const notifyQueue = SippolQueue.createNotifySppQueue(matches[0], queue.callback);
-                            this.addQueue(notifyQueue);
+                            const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
+                            this.addQueue(callbackQueue);
                         }
                         resolve(items);
                     })
@@ -334,10 +332,6 @@ class SippolBridge {
                 ;
             }),
         ]);
-    }
-
-    notifySpp(queue) {
-        return this.notifyCallback(queue.callback, queue.data.docs ? queue.data : {spp: queue.data});
     }
 
     uploadDocs(queue) {
@@ -403,8 +397,8 @@ class SippolBridge {
                 .then((res) => {
                     result = res;
                     if (res && queue.callback) {
-                        const notifyQueue = SippolQueue.createNotifySppQueue({Id: queue.data.Id, docs: res}, queue.callback);
-                        this.addQueue(notifyQueue);
+                        const callbackQueue = SippolQueue.createCallbackQueue({Id: queue.data.Id, docs: res}, queue.callback);
+                        this.addQueue(callbackQueue);
                     }
                     resolve();
                 })
@@ -489,11 +483,10 @@ class SippolQueue
         if (!this.types) {
             this.types = Object.freeze({
                 'spp': SippolQueue.QUEUE_SPP,
-                'spp-notify': SippolQueue.QUEUE_NOTIFY_SPP,
                 'upload': SippolQueue.QUEUE_UPLOAD,
                 'query': SippolQueue.QUEUE_QUERY,
                 'list': SippolQueue.QUEUE_LIST,
-                'list-notify': SippolQueue.QUEUE_NOTIFY_LIST,
+                'callback': SippolQueue.QUEUE_CALLBACK,
             });
         }
         return this.getTextFromId(this.type, this.types);
@@ -526,10 +519,6 @@ class SippolQueue
         return this.create(SippolQueue.QUEUE_SPP, data, callback);
     }
 
-    static createNotifySppQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_NOTIFY_SPP, data, callback);
-    }
-
     static createUploadQueue(data, callback = null) {
         return this.create(SippolQueue.QUEUE_UPLOAD, data, callback);
     }
@@ -542,16 +531,15 @@ class SippolQueue
         return this.create(SippolQueue.QUEUE_LIST, data, callback);
     }
 
-    static createNotifyListQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_NOTIFY_LIST, data, callback);
+    static createCallbackQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_CALLBACK, data, callback);
     }
 
     static get QUEUE_SPP() { return 1 }
-    static get QUEUE_NOTIFY_SPP() {return 2 }
-    static get QUEUE_UPLOAD() { return 3 }
-    static get QUEUE_QUERY() {return 4 }
-    static get QUEUE_LIST() {return 5 }
-    static get QUEUE_NOTIFY_LIST() {return 6 }
+    static get QUEUE_UPLOAD() { return 2 }
+    static get QUEUE_QUERY() { return 3 }
+    static get QUEUE_LIST() { return 4 }
+    static get QUEUE_CALLBACK() { return 5 }
 
     static get STATUS_NEW() { return 1 }
     static get STATUS_PROCESSING() { return 2 }
