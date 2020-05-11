@@ -501,6 +501,7 @@ class Sippol extends WebRobot {
                 this.getPages(pager, options.direction)
                     .then((result) => {
                         pages = result;
+                        page = options.direction > 0 ? 1 : pages;
                         w();
                     })
                 ;
