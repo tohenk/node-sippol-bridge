@@ -284,76 +284,103 @@ class Sippol extends WebRobot {
         });
     }
 
-    getPages(pager) {
+    navigatePage(pager, page, options) {
         return new Promise((resolve, reject) => {
+            options = options || {};
+            if (typeof options.wait == 'undefined') options.wait = true;
             this.findPager(pager)
-                .then((el) => {
-                    if (el) {
-                        el.findElements(By.xpath('.//li/a'))
-                            .then((elements) => {
-                                let pages = 1;
-                                let current;
-                                const q = new Queue(elements, (item) => {
-                                    this.getText([By.xpath('.')], item)
-                                        .then((result) => {
-                                            let page;
-                                            [page] = result;
-                                            if (!isNaN(page)) {
-                                                pages = Math.max(pages, parseInt(page));
-                                                item.findElement(By.xpath('..'))
-                                                    .then((p) => {
-                                                        p.getAttribute('class')
-                                                            .then((classes) => {
-                                                                if (classes.indexOf('active') >= 0) {
-                                                                    current = parseInt(page);
-                                                                }
-                                                                q.next();
-                                                            })
-                                                        ;
-                                                    })
-                                                ;
-                                            } else {
-                                                q.next();
+                .then((xpager) => {
+                    if (!xpager) return resolve();
+                    const isPage = ['first', 'prev', 'next', 'last'].indexOf(page) < 0;
+                    let needClick = isPage ? true : false;
+                    let xpage;
+                    const w = [
+                        // find desired navigation button
+                        () => new Promise((resolve, reject) => {
+                            const xpath = isPage ? './/li[contains(@class,"pagination-page")]/a[text()="_PAGE_"]' :
+                                './/li[contains(@class,"pagination-_PAGE_")]/a';
+                            xpager.findElements(By.xpath(xpath.replace(/_PAGE_/, page)))
+                                .then((elements) => {
+                                    if (elements.length) {
+                                        xpage = elements[0];
+                                    }
+                                    resolve();
+                                })
+                            ;
+                        })
+                    ];
+                    if (!isPage) {
+                        // ensure navigation button is clickable
+                        w.push(() => new Promise((resolve, reject) => {
+                            if (!xpage) return resolve();
+                            xpage.findElement(By.xpath('./..'))
+                                .then((xel) => {
+                                    xel.getAttribute('class')
+                                        .then((xclass) => {
+                                            if (xclass.indexOf('disabled') < 0) {
+                                                needClick = true;
                                             }
+                                            resolve();
                                         })
                                     ;
-                                });
-                                q.on('done', () => {
-                                    resolve([pages, current]);
-                                });
-                            })
-                        ;
-                    } else {
-                        resolve([1, undefined]);
+                                })
+                            ;
+                        }));
                     }
+                    // click it
+                    w.push(() => new Promise((resolve, reject) => {
+                        if (!needClick) return resolve();
+                        xpage.click()
+                            .then(() => resolve())
+                        ;
+                    }));
+                    if (options.wait) {
+                        w.push(() => this.sleep());
+                    }
+                    Work.works(w)
+                        .then(() => resolve(options.returnPage ? xpage : xpager))
+                        .catch(() => resolve())
+                    ;
                 })
             ;
         });
     }
 
-    gotoPage(pager, page) {
-        return new Promise((resolve, reject) => {
-            this.findPager(pager)
-                .then((el) => {
-                    if (el) {
-                        el.findElement(By.xpath('.//li/a[text()="_PAGE_"]'.replace(/_PAGE_/, page)))
-                            .then((clicker) => {
-                                clicker.click()
-                                    .then(() => {
-                                        this.sleep(this.delay)
-                                            .then(() => resolve(clicker))
-                                        ;
-                                    })
-                                ;
-                            })
-                            .catch(() => resolve())
-                        ;
-                    } else {
+    getPages(pager, dir) {
+        let pages = 1;
+        let xpager;
+        return Work.works([
+            () => new Promise((resolve, reject) => {
+                this.navigatePage(pager, 'last')
+                    .then((result) => {
+                        if (result) xpager = result;
                         resolve();
-                    }
-                })
-            ;
-        });
+                    })
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                if (!xpager) return resolve();
+                xpager.findElements(By.xpath('.//li[contains(@class,"pagination-page")]'))
+                    .then((elements) => {
+                        this.getText([By.xpath('.')], elements[elements.length - 1])
+                            .then((xpage) => {
+                                pages = parseInt(xpage);
+                                resolve();
+                            })
+                        ;
+                    })
+                ;
+            }),
+            () => new Promise((resolve, reject) => {
+                if (dir > 0) {
+                    this.navigatePage(pager, 'first')
+                        .then(() => resolve(pages))
+                    ;
+                } else {
+                    resolve(pages);
+                }
+            })
+        ]);
     }
 
     each(options) {
@@ -380,14 +407,14 @@ class Sippol extends WebRobot {
                                 if ((options.direction > 0 && page > pages) || (options.direction < 0 && page < 1)) {
                                     // if more than 1 page, go back to first page if needed
                                     if (pages > 1 && options.resetPage) {
-                                        this.gotoPage(pager, 1)
+                                        this.navigatePage(pager, 'first')
                                             .then(() => resolve(retval))
                                         ;
                                     } else {
                                         resolve(retval);
                                     }
                                 } else {
-                                    this.gotoPage(pager, page)
+                                    this.navigatePage(pager, page, {returnPage: true})
                                         .then((el) => {
                                             if (el) {
                                                 w();
@@ -471,17 +498,10 @@ class Sippol extends WebRobot {
                 ;
             }
             if (pager) {
-                this.getPages(pager)
+                this.getPages(pager, options.direction)
                     .then((result) => {
-                        [pages] = result;
-                        if (options.direction < 0) {
-                            page = pages;
-                            this.gotoPage(pager, page)
-                                .then(() => w())
-                            ;
-                        } else {
-                            w();
-                        }
+                        pages = result;
+                        w();
                     })
                 ;
             } else {
