@@ -93,25 +93,13 @@ class SippolBridge {
     }
 
     addQueue(queue) {
-        const id = this.genId();
-        queue.setId(id);
+        if (!queue.id) {
+            queue.setId(this.genId());
+            queue.maps = this.sippol.maps;
+        }
         this.queues.push(queue);
         this.queue.requeue([queue]);
-        return {status: 'queued', id: id};
-    }
-
-    updateItems(items) {
-        if (items) {
-            for (let i = 0; i < items.length; i++) {
-                let pid = items[i].Id;
-                if (!pid) continue;
-                if (!this.items[pid]) {
-                    this.items[pid] = items[i];
-                } else {
-                    this.items[pid].copyFrom(items[i]);
-                }
-            }
-        }
+        return {status: 'queued', id: queue.id};
     }
 
     filterItems(items, filter) {
@@ -195,7 +183,6 @@ class SippolBridge {
         return new Promise((resolve, reject) => {
             this.sippol.fetchData()
                 .then((items) => {
-                    this.updateItems(items);
                     resolve(items);
                 })
                 .catch((err) => reject(err))
@@ -236,13 +223,13 @@ class SippolBridge {
                 });
                 res.on('end', () => {
                     if (result) {
-                        status = util.format('Callback %s => %s', url, result);
+                        status = util.format('%s', result);
                     }
                     resolve(status);
                 });
             });
             req.on('error', (e) => {
-                status = util.format('Callback error %s: %s', url, e.message);
+                status = util.format('Error: %s', e.message);
             });
             req.write(payload);
             req.end();
@@ -283,11 +270,13 @@ class SippolBridge {
 
     createSpp(queue) {
         let id, matches;
+        const penerima = queue.getMappedData('penerima.penerima');
+        const jumlah = queue.getMappedData('rincian.jumlah');
         return this.do([
             () => new Promise((resolve, reject) => {
-                this.getPenerima(queue.data.PENERIMA)
+                this.getPenerima(penerima)
                     .then((items) => {
-                        matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
+                        matches = this.filterItems(items, {nominal: jumlah});
                         if (matches.length) {
                             if (queue.callback) {
                                 let idx = -1;
@@ -307,7 +296,7 @@ class SippolBridge {
                                 }, queue.callback);
                                 this.addQueue(callbackQueue);
                             }
-                            return reject('SPP for ' + queue.data.PENERIMA + ' has been created!');
+                            return reject('SPP for ' + penerima + ' has been created!');
                         }
                         // try to edit incomplete SPP
                         matches = this.filterItems(items, {nominal: 0, status: this.sippol.SPP_DRAFT});
@@ -333,9 +322,9 @@ class SippolBridge {
                 }
             }),
             () => new Promise((resolve, reject) => {
-                this.getPenerima(queue.data.PENERIMA)
+                this.getPenerima(penerima)
                     .then((items) => {
-                        matches = this.filterItems(items, {nominal: queue.data.JUMLAH});
+                        matches = this.filterItems(items, {nominal: jumlah});
                         if (matches.length && queue.callback) {
                             const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
                             this.addQueue(callbackQueue);
@@ -477,14 +466,14 @@ class SippolQueue
     setStatus(status) {
         if (this.status != status) {
             this.status = status;
-            console.log('Queue status %s:%s => %s', this.getTypeText(), this.id, this.getStatusText());
+            console.log('Queue %s %s', this.getInfo(), this.getStatusText());
         }
     }
 
     setResult(result) {
         if (this.result != result) {
             this.result = result;
-            console.log('Queue result %s:%s => %s', this.getTypeText(), this.id, this.result);
+            console.log('Queue %s result: %s', this.getInfo(), this.result);
         }
     }
 
@@ -492,8 +481,7 @@ class SippolQueue
         return Object.keys(values)[Object.values(values).indexOf(id)];
     }
 
-    getTypeText()
-    {
+    getTypeText() {
         if (!this.types) {
             this.types = Object.freeze({
                 'spp': SippolQueue.QUEUE_SPP,
@@ -506,8 +494,7 @@ class SippolQueue
         return this.getTextFromId(this.type, this.types);
     }
 
-    getStatusText()
-    {
+    getStatusText() {
         if (!this.statuses) {
             this.statuses = Object.freeze({
                 'new': SippolQueue.STATUS_NEW,
@@ -519,8 +506,37 @@ class SippolQueue
         return this.getTextFromId(this.status, this.statuses);
     }
 
+    getMappedData(name) {
+        if (this.maps && typeof name == 'string') {
+            let o = this.maps;
+            let parts = name.split('.');
+            while (parts.length) {
+                let n = parts.shift();
+                if (n.substr(0, 1) == '#') n = n.substr(1);
+                if (o[n]) {
+                    o = o[n];
+                } else {
+                    o = null;
+                    break;
+                }
+            }
+            if (typeof o == 'string' && this.data[o]) {
+                return this.data[o];
+            }
+        }
+    }
+
+    getInfo() {
+        let info = this.info;
+        if (!info && this.type == SippolQueue.QUEUE_CALLBACK) {
+            info = this.callback;
+        }
+        return info ? util.format('%s:%s (%s)', this.getTypeText(), this.id, info) :
+            util.format('%s:%s', this.getTypeText(), this.id);
+    }
+
     static create(type, data, callback = null) {
-        const queue = new SippolQueue();
+        const queue = new this();
         queue.setType(type);
         queue.setData(data);
         if (callback) {

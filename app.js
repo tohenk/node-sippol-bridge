@@ -97,17 +97,19 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
             socket.emit('setup', {version: bridge.VERSION});
         });
         socket.on('spp', (data) => {
-            console.log('SPP: %s', data.NPWP);
             const queue = SippolQueue.createSppQueue(data, socket.callback);
             const res = bridge.addQueue(queue);
+            queue.info = queue.getMappedData('penerima.penerima');
+            console.log('SPP: %s %s', data[bridge.datakey], queue.info ? queue.info : '');
             socket.emit('spp', res);
         });
         socket.on('upload', (data) => {
             let res;
             if (data.Id) {
-                console.log('Upload: %s', data.Id);
                 const queue = SippolQueue.createUploadQueue(data, socket.callback);
                 res = bridge.addQueue(queue);
+                if (data.info) queue.info = data.info;
+                console.log('Upload: %s %s', data.Id, queue.info ? queue.info : '');
             } else {
                 const msg = 'Ignoring upload without Id';
                 console.log(msg);
@@ -119,9 +121,10 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
             console.log('Query: %s', data.term);
             const f = () => new Promise((resolve, reject) => {
                 const queue = SippolQueue.createQueryQueue({term: data.term}, socket.callback);
+                bridge.addQueue(queue);
+                queue.info = data.term;
                 queue.resolve = resolve;
                 queue.reject = reject;
-                bridge.addQueue(queue);
             });
             f()
                 .then((items) => {
