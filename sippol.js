@@ -640,30 +640,33 @@ class Sippol extends WebRobot {
                             ;
                         }),
                         () => new Promise((resolve, reject) => {
-                            switch (true) {
-                                case data.CairTanggal != null:
-                                    data.Status = this.SPP_CAIR;
-                                    break;
-                                case data.SP2DTanggal != null:
-                                    data.Status = this.SPP_SP2D;
-                                    break;
-                                case data.SPMNomor != null:
-                                    data.Status = this.SPP_SPM;
-                                    break;
-                                default:
-                                    form.findElement(By.xpath('//div[@ng-show="vm.spp.pkId"]/span/span[text()="Batal"]'))
-                                        .then((el) => {
-                                            el.isDisplayed()
-                                                .then((visible) => {
-                                                    data.Status = visible ? this.SPP_BATAL : this.SPP_DRAFT;
-                                                    resolve();
-                                                })
-                                            ;
+                            form.findElement(By.xpath('//div[@ng-show="vm.spp.pkId"]/span/span[text()="Batal"]'))
+                                .then((el) => {
+                                    el.isDisplayed()
+                                        .then((visible) => {
+                                            if (visible) {
+                                                data.Status = this.SPP_BATAL;
+                                            } else {
+                                                switch (true) {
+                                                    case data.CairTanggal != null:
+                                                        data.Status = this.SPP_CAIR;
+                                                        break;
+                                                    case data.SP2DTanggal != null:
+                                                        data.Status = this.SPP_SP2D;
+                                                        break;
+                                                    case data.SPMNomor != null:
+                                                        data.Status = this.SPP_SPM;
+                                                        break;
+                                                    default:
+                                                        data.Status = this.SPP_DRAFT;
+                                                        break;
+                                                }
+                                            }
+                                            resolve();
                                         })
                                     ;
-                                    break;
-                            }
-                            resolve();
+                                })
+                            ;
                         }),
                         () => this.click({el: form, data: By.xpath('//button[@class="close"]')})
                     ])
