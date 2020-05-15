@@ -62,6 +62,12 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
         config.maps = JSON.parse(fs.readFileSync(filename));
         console.log('Maps loaded from %s', filename);
     }
+    // load doc maps
+    filename = path.join(__dirname, 'docs.json');
+    if (fs.existsSync(filename)) {
+        config.docs = JSON.parse(fs.readFileSync(filename));
+        console.log('Document maps loaded from %s', filename);
+    }
     // load profile
     config.profiles = {};
     filename = path.join(__dirname, 'profiles.json');

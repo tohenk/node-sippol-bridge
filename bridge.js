@@ -36,7 +36,6 @@ class SippolBridge {
 
     constructor(options) {
         this.sippol = new Sippol(this.getOptions(options));
-        this.items = {};
         this.queues = [];
         this.queue = new Queue([], (queue) => {
             queue.setStatus(SippolQueue.STATUS_PROCESSING);
@@ -67,6 +66,10 @@ class SippolBridge {
         if (options.datakey) {
             this.datakey = options.datakey;
             delete options.datakey;
+        }
+        if (options.docs) {
+            this.docs = options.docs;
+            delete options.docs;
         }
         return options;
     }
@@ -341,57 +344,54 @@ class SippolBridge {
         let result;
         const w = [];
         const docs = {};
-        const mergefiles = [];
-        const doctypes = {
-            REKENING: false,
-            NPHD: false,
-            PAKTA: false,
-            KTPKETUA: true,
-            KTPBENDAHARA: true,
-            KWITANSI: true,
-            SPTJ: true,
-            RAB: true,
-            SPKONSULTAN: true,
-            SK: true
-        };
+        const mergedocs = {};
         const doctmpdir = path.join(this.sippol.workdir, 'doctmp');
         const docfname = (docname) => {
             return path.join(doctmpdir, queue.data.Id + '_' + docname.toLowerCase() + '.pdf');
         }
         // save documents to file
-        Object.keys(doctypes).forEach((doctype) => {
-            w.push(() => new Promise((resolve, reject) => {
-                const docfilename = docfname(doctype);
-                if (!fs.existsSync(doctmpdir)) fs.mkdirSync(doctmpdir);
-                if (fs.existsSync(docfilename)) fs.unlinkSync(docfilename);
-                this.saveDoc(docfilename, queue.data[doctype])
-                    .then((filename) => {
-                        if (doctypes[doctype] == true) {
-                            mergefiles.push(filename);
-                        } else {
-                            docs[doctype] = filename;
-                        }
-                        resolve();
-                    })
-                    .catch(() => resolve())
-                ;
-            }));
-        });
+        if (this.docs) {
+            Object.keys(this.docs).forEach((doctype) => {
+                w.push(() => new Promise((resolve, reject) => {
+                    const docfilename = docfname(doctype);
+                    if (!fs.existsSync(doctmpdir)) fs.mkdirSync(doctmpdir);
+                    if (fs.existsSync(docfilename)) fs.unlinkSync(docfilename);
+                    this.saveDoc(docfilename, queue.data[doctype])
+                        .then((filename) => {
+                            let docgroup = this.docs[doctype];
+                            if (typeof docgroup == 'string') {
+                                if (!mergedocs[docgroup]) {
+                                    mergedocs[docgroup] = [];
+                                }
+                                mergedocs[docgroup].push(filename);
+                            } else {
+                                docs[doctype] = filename;
+                            }
+                            resolve();
+                        })
+                        .catch(() => resolve())
+                    ;
+                }));
+            });
+        }
         // merge docs if necessary
         w.push(() => new Promise((resolve, reject) => {
-            if (mergefiles.length == 0) {
+            if (mergedocs.length == 0) {
                 resolve();
             } else {
                 const merge = require('easy-pdf-merge');
-                const docfilename = docfname('lain');
-                merge(mergefiles, docfilename, (err) => {
-                    if (err) {
-                        console.error(err);
-                        return resolve();
-                    }
-                    docs.LAIN = docfilename;
-                    resolve();
+                const q = new Queue(Object.keys(mergedocs), (docgroup) => {
+                    const docfilename = docfname(docgroup.toLowerCase());
+                    merge(mergedocs[docgroup], docfilename, (err) => {
+                        if (err) {
+                            console.error(err);
+                        } else {
+                            docs[docgroup] = docfilename;
+                        }
+                        q.next();
+                    });
                 });
+                q.once('done', () => resolve());
             }
         }));
         // upload docs
@@ -414,8 +414,10 @@ class SippolBridge {
         // cleanup files
         w.push(() => new Promise((resolve, reject) => {
             const files = [];
-            Array.prototype.push.apply(files, mergefiles);
             Array.prototype.push.apply(files, Object.values(docs));
+            Object.values(mergedocs).forEach((docfiles) => {
+                Array.prototype.push.apply(files, docfiles);
+            });
             files.forEach((file) => {
                 if (fs.existsSync(file)) {
                     fs.unlinkSync(file);
