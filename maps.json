@@ -1,0 +1,32 @@
+{
+	"spp": {
+		"tglSpp": "TGL_SPP",
+		"jenis": "number:1",
+		"syarat": "number:26",
+		"pk": "number:4819",
+		"pkOto": "number:2314",
+		"pegOto2": "number:1005",
+		"untuk": "UNTUK",
+		"ket": "KET"
+	},
+	"spm": {
+		"tglSpm": "TGL_SPM",
+		"pkSpm": "number:2118"
+	},
+	"penerima": {
+		"penerima": "PENERIMA",
+		"alamat": "ALAMAT",
+		"npwp": "NPWP",
+		"kode": "KODE",
+		"noKontrak": "NO_KONTRAK",
+		"tglKontrak": "TGL_KONTRAK",
+		"bank": "BANK",
+		"bankCab": "",
+		"bankRek": "BANK_REK"
+	},
+	"rincian": {
+		"#search_keg_value": "KEG",
+		"#search_rek_value": "REK",
+		"jumlah": "AFEKTASI"
+	}
+}
