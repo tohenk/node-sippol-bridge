@@ -60,6 +60,9 @@ class SippolBridge {
             ;
         },
         () => this.sippol.ready ? true : false);
+        this.sippol.onready = () => {
+            this.queue.next();
+        }
     }
 
     getOptions(options) {
