@@ -134,12 +134,12 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
                     if (data.term) uploads[data.Id].term = data.term;
                 }
                 let parts = [];
-                for (let k in Object.keys(data)) {
+                Object.keys(data).forEach((k) => {
                     if (['Id', 'info', 'term', 'seq', 'tot'].indexOf(k) < 0) {
                         uploads[data.Id][k] = data[k];
                         parts.push(k);
                     }
-                }
+                });
                 if (parts.length) {
                     if (data.seq == data.tot) {
                         const udata = uploads[data.Id];
