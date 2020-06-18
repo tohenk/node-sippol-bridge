@@ -394,6 +394,19 @@ class SippolBridge {
                 q.once('done', () => resolve());
             }
         }));
+        // filter to speed up
+        w.push(() => new Promise((resolve, reject) => {
+            if (!queue.data.info) return resolve();
+            this.sippol.filterData(queue.data.info, this.sippol.FILTER_PENERIMA)
+                .then(() => resolve())
+                .catch(() => {
+                    this.sippol.resetFilter()
+                        .then(() => resolve())
+                        .catch((err) => reject(err))
+                    ;
+                })
+            ;
+        }));
         // upload docs
         w.push(() => new Promise((resolve, reject) => {
             this.sippol.uploadDocs(queue.data.Id, docs)
