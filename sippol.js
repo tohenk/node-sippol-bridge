@@ -332,6 +332,7 @@ class Sippol extends WebRobot {
                         if (!needClick) return resolve();
                         xpage.click()
                             .then(() => resolve())
+                            .catch((err) => reject(err))
                         ;
                     }));
                     if (options.wait) {
@@ -893,6 +894,7 @@ class Sippol extends WebRobot {
                                                 if (result.indexOf(data.value) >= 0) {
                                                     el.click()
                                                         .then(() => resolve())
+                                                        .catch((err) => reject(err))
                                                     ;
                                                 } else {
                                                     q.next();
