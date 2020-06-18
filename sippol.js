@@ -563,8 +563,8 @@ class Sippol extends WebRobot {
                 return [
                     () => new Promise((resolve, reject) => {
                         this.retrData(el, data, useForm)
-                            .then(() => {
-                                items.push(data);
+                            .then((okay) => {
+                                if (okay) items.push(data);
                                 resolve();
                             })
                             .catch((err) => reject(err))
@@ -578,17 +578,27 @@ class Sippol extends WebRobot {
 
     retrData(el, data, useForm) {
         return new Promise((resolve, reject) => {
-            if (useForm) {
-                this.retrDataFromForm(el, data)
-                    .then(() => resolve())
-                    .catch((err) => reject(err))
-                ;
-            } else {
-                this.retrDataFromRow(el, data)
-                    .then(() => resolve())
-                    .catch((err) => reject(err))
-                ;
-            }
+            this.retrDataStatusFromRow(el)
+                .then((okay) => {
+                    // process only not cancelled data
+                    if (okay) {
+                        if (useForm) {
+                            this.retrDataFromForm(el, data)
+                                .then(() => resolve(true))
+                                .catch((err) => reject(err))
+                            ;
+                        } else {
+                            this.retrDataFromRow(el, data)
+                                .then(() => resolve(true))
+                                .catch((err) => reject(err))
+                            ;
+                        }
+                    } else {
+                        resolve(false);
+                    }
+                })
+                .catch((err) => reject(err))
+            ;
         });
     }
 
@@ -723,6 +733,21 @@ class Sippol extends WebRobot {
                     xel.getAttribute('title')
                         .then((title) => {
                             resolve(this.pickPid(title));
+                        })
+                    ;
+                })
+                .catch((err) => reject(err))
+            ;
+        });
+    }
+
+    retrDataStatusFromRow(el) {
+        return new Promise((resolve, reject) => {
+            el.findElement(By.xpath('./../td[3]/span[@ng-show="spp.pkSppFlag!=0"]'))
+                .then((xel) => {
+                    xel.getAttribute('class')
+                        .then((xclass) => {
+                            resolve(xclass.indexOf('glyphicon-remove') < 0);
                         })
                     ;
                 })
