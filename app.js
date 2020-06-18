@@ -92,6 +92,7 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
     const bridge = new SippolBridge(config);
     const http = require('http').createServer();
     const io = require('socket.io')(http);
+    let bridge2 = null;
     io.of('/sippol').on('connection', (socket) => {
         console.log('Client connected: %s', socket.id);
         socket.on('disconnect', () => {
@@ -179,8 +180,14 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
             ;
         });
         socket.on('list', (data) => {
+            if (bridge2 == null) {
+                const cfg = Object.assign({}, config);
+                cfg.browser = 'firefox';
+                if (cfg.browser == config.browser) cfg.session = 's2';
+                bridge2 = new SippolBridge(cfg);
+            }
             const queue = SippolQueue.createListQueue({year: data.year}, socket.callback);
-            const res = bridge.addQueue(queue);
+            const res = bridge2.addQueue(queue);
             socket.emit('list', res);
         });
     });
