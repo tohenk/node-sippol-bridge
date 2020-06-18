@@ -396,8 +396,9 @@ class SippolBridge {
         }));
         // filter to speed up
         w.push(() => new Promise((resolve, reject) => {
-            if (!queue.data.info) return resolve();
-            this.sippol.filterData(queue.data.info, this.sippol.FILTER_PENERIMA)
+            const term = queue.data.term ? queue.data.term : queue.data.info;
+            if (!term) return resolve();
+            this.sippol.filterData(term, this.sippol.FILTER_PENERIMA)
                 .then(() => resolve())
                 .catch(() => {
                     this.sippol.resetFilter()
