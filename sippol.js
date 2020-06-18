@@ -78,7 +78,7 @@ class Sippol extends WebRobot {
     }
 
     pickPid(value) {
-        if (value.length) {
+        if (value != undefined && value.length) {
             let matches;
             if (matches = value.match(/#(\d+)/)) {
                 return this.pickNumber(matches[1]);
@@ -98,23 +98,25 @@ class Sippol extends WebRobot {
     }
 
     pickNumber(value) {
-        if (value.length) {
+        if (value != undefined && value.length) {
             return parseInt(value);
         }
         return null;
     }
 
     pickFloat(value) {
-        if (value.length) {
+        if (value != undefined && value.length) {
             return parseFloat(value.replace(/\./g, '').replace(/,/g, ''));
         }
         return null;
     }
 
     pickDate(value) {
-        value = (value.substr(0, 1) == ',' ? value.substr(1) : value).trim();
-        if (value.length) {
-            return value;
+        if (value != undefined) {
+            value = (value.substr(0, 1) == ',' ? value.substr(1) : value).trim();
+            if (value.length) {
+                return value;
+            }
         }
         return null;
     }
