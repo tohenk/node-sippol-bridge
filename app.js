@@ -86,6 +86,7 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
         }
     }
 
+    const uploads = {};
     const port = Cmd.get('port') | 3000;
     const {SippolBridge, SippolQueue} = require('./bridge');
     const bridge = new SippolBridge(config);
@@ -122,6 +123,42 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
                 res = {error: msg}
             }
             socket.emit('upload', res);
+        });
+        socket.on('upload-part', (data) => {
+            let res;
+            if (data.Id) {
+                if (data.seq == 1) {
+                    uploads[data.Id] = {Id: data.Id};
+                    if (data.info) uploads[data.Id].info = data.info;
+                    if (data.term) uploads[data.Id].term = data.term;
+                }
+                let parts = [];
+                for (let k in Object.keys(data)) {
+                    if (['Id', 'info', 'term', 'seq', 'tot'].indexOf(k) < 0) {
+                        uploads[data.Id][k] = data[k];
+                        parts.push(k);
+                    }
+                }
+                if (parts.length) {
+                    if (data.seq == data.tot) {
+                        const udata = uploads[data.Id];
+                        const queue = SippolQueue.createUploadQueue(udata, socket.callback);
+                        res = bridge.addQueue(queue);
+                        if (udata.info) queue.info = udata.info;
+                        console.log('Upload from partial: %s %s', udata.Id, queue.info ? queue.info : '');
+                        delete uploads[data.Id];
+                    } else {
+                        res = {part: parts};
+                    }
+                } else {
+                    res = {error: 'Document part not found for ' + data.Id};
+                }
+            } else {
+                const msg = 'Ignoring partial upload without Id';
+                console.log(msg);
+                res = {error: msg}
+            }
+            socket.emit('upload-part', res);
         });
         socket.on('query', (data) => {
             console.log('Query: %s', data.term);
