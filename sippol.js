@@ -156,13 +156,18 @@ class Sippol extends WebRobot {
     stop() {
         return new Promise((resolve, reject) => {
             if (this.driver) {
-                this.getDriver().quit()
-                    .then(() => {
-                        this.driver = null;
-                        resolve();
-                    })
-                    .catch((err) => reject(err))
-                ;
+                try {
+                    this.getDriver().quit()
+                        .then(() => {
+                            this.driver = null;
+                            resolve();
+                        })
+                        .catch((err) => reject(err))
+                    ;
+                }
+                catch (err) {
+                    reject(err);
+                }
             } else {
                 resolve();
             }
