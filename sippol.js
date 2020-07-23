@@ -114,14 +114,29 @@ class Sippol extends WebRobot {
         return null;
     }
 
-    pickDate(value) {
+    pickDate(value, toDate = false) {
         if (value != undefined) {
             value = (value.substr(0, 1) == ',' ? value.substr(1) : value).trim();
             if (value.length) {
+                if (toDate) {
+                    value = this.decodeDate(value);
+                }
                 return value;
             }
         }
         return null;
+    }
+
+    decodeDate(value) {
+        const dtpart = value.split('/');
+        if (dtpart.length == 3) {
+            if (dtpart[2].length < 4) {
+                const now = new Date();
+                dtpart[2] = (now.getFullYear() % 100) * 100 + parseInt(dtpart[2]);
+            }
+            value = new Date(parseInt(dtpart[2]), parseInt(dtpart[1]) - 1, parseInt(dtpart[0]));
+        }
+        return value;
     }
 
     getDocType(doc) {
@@ -129,6 +144,13 @@ class Sippol extends WebRobot {
             if (doc.indexOf(this.docs[key]) == 0) {
                 return key;
             }
+        }
+    }
+
+    getKey(keys, value) {
+        const idx = Object.values(keys).indexOf(value);
+        if (idx >= 0) {
+            return Object.keys(keys)[idx];
         }
     }
 
@@ -141,10 +163,7 @@ class Sippol extends WebRobot {
                 'key': this.DATA_PENERIMA
             };
         }
-        const idx = Object.values(this.dataKeys).indexOf(type);
-        if (idx >= 0) {
-            return Object.keys(this.dataKeys)[idx];
-        }
+        return this.getKey(this.dataKeys, type);
     }
 
     start() {
@@ -536,7 +555,13 @@ class Sippol extends WebRobot {
                                                 finishEach(() => q.next());
                                             })
                                             .catch((err) => {
-                                                if (err instanceof Error) throw err;
+                                                // is iteration stopped?
+                                                if (err instanceof SippolStopError) {
+                                                    next = false;
+                                                    q.done();
+                                                } else {
+                                                    if (err instanceof Error) throw err;
+                                                }
                                             })
                                         ;
                                     }
@@ -630,25 +655,89 @@ class Sippol extends WebRobot {
         );
     }
 
-    fetchData(useForm = true) {
-        let items = [];
-        return this.eachData(
+    fetchData(options) {
+        options = options || {};
+        if (options.useForm == undefined) options.useForm = true;
+        const items = [];
+        const w = this.fetchDataWorks(options);
+        w.push(() => this.eachData(
             (el) => {
                 const data = new SippolData();
-                return [
-                    () => new Promise((resolve, reject) => {
-                        this.retrData(el, data, useForm)
-                            .then((okay) => {
-                                if (okay) items.push(data);
-                                resolve();
-                            })
-                            .catch((err) => reject(err))
-                        ;
-                    })
-                ];
+                const works = this.fetchDataEachWorks(el, options);
+                works.push(() => new Promise((resolve, reject) => {
+                    this.retrData(el, data, options.useForm)
+                        .then((okay) => {
+                            if (okay) items.push(data);
+                            resolve();
+                        })
+                        .catch((err) => reject(err))
+                    ;
+                }));
+                return works;
             },
             () => Promise.resolve(items)
-        );
+        ));
+        return Work.works(w);
+    }
+
+    fetchDataWorks(options) {
+        const works = [];
+        const filters = {spp: this.DATA_SPP, spm: this.DATA_SPM, sp2d: this.DATA_SP2D};
+        Object.keys(filters).forEach((key) => {
+            if (options[key] instanceof Date) {
+                works.push(() => this.sortData(filters[key], this.SORT_DESCENDING));
+            }
+        });
+        return works;
+    }
+
+    fetchDataEachWorks(el, options) {
+        const works = [];
+        const filters = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
+        Object.keys(filters).forEach((key) => {
+            if (options[key] instanceof Date) {
+                works.push(() => new Promise((resolve, reject) => {
+                    this.fetchDataEachMatch(el, filters[key], options[key])
+                        .then((okay) => {
+                            if (!okay) {
+                                reject(new SippolStopError());
+                            } else {
+                                resolve();
+                            }
+                        })
+                    ;
+                }));
+            }
+        });
+        return works;
+    }
+
+    fetchDataEachMatch(el, filter, since) {
+        return new Promise((resolve, reject) => {
+            let okay = true;
+            el.findElement(By.xpath('./..//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))
+                .then((xel) => {
+                    xel.isDisplayed()
+                        .then((visible) => {
+                            okay = visible;
+                            if (okay) {
+                                xel.getText()
+                                    .then((value) => {
+                                        const s = value.split(',');
+                                        const dt = this.pickDate(s[1], true);
+                                        okay = dt >= since;
+                                        resolve(okay);
+                                    })
+                                ;
+                            } else {
+                                resolve(okay);
+                            }
+                        })
+                    ;
+                })
+                .catch(() => resolve(false))
+            ;
+        });
     }
 
     retrData(el, data, useForm) {
@@ -1156,4 +1245,11 @@ class SippolData {
     }
 }
 
-module.exports = {Sippol: Sippol, SippolData: SippolData};
+class SippolStopError extends Error {
+}
+
+module.exports = {
+    Sippol: Sippol,
+    SippolData: SippolData,
+    SippolStopError: SippolStopError
+};

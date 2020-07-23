@@ -186,7 +186,16 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
                 if (cfg.browser == config.browser) cfg.session = 's2';
                 bridge2 = new SippolBridge(cfg);
             }
-            const queue = SippolQueue.createListQueue({year: data.year}, socket.callback);
+            const options = {year: data.year};
+            ['spp', 'spm', 'sp2d'].forEach((key) => {
+                if (data[key] && (
+                    !isNaN(data[key]) || (typeof data[key] == 'string' && data[key].indexOf('T') > 0)
+                    )
+                ) {
+                    options[key] = new Date(data[key]);
+                }
+            });
+            const queue = SippolQueue.createListQueue(options, socket.callback);
             const res = bridge2.addQueue(queue);
             socket.emit('list', res);
         });

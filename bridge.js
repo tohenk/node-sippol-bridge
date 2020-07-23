@@ -184,9 +184,9 @@ class SippolBridge {
         return this.do(() => Promise.resolve());
     }
 
-    fetch() {
+    fetch(options) {
         return new Promise((resolve, reject) => {
-            this.sippol.fetchData()
+            this.sippol.fetchData(options)
                 .then((items) => {
                     resolve(items);
                 })
@@ -195,9 +195,10 @@ class SippolBridge {
         });
     }
 
-    list(clear = false) {
-        if (clear) this.items = {};
-        return this.do(() => this.fetch());
+    list(options) {
+        options = options || {};
+        if (options.clear) this.items = {};
+        return this.do(() => this.fetch(options));
     }
 
     getPenerima(penerima) {
@@ -259,7 +260,7 @@ class SippolBridge {
 
     listSpp(queue) {
         return new Promise((resolve, reject) => {
-            this.list()
+            this.list(queue.data)
                 .then((items) => {
                     const matches = this.filterItems(items, {year: queue.data.year});
                     if (matches.length && queue.callback) {
