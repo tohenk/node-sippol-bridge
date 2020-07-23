@@ -203,7 +203,7 @@ class SippolBridge {
 
     getPenerima(penerima) {
         return Work.works([
-            () => this.sippol.filterData(penerima, this.sippol.FILTER_PENERIMA),
+            () => this.sippol.filterData(penerima, this.sippol.DATA_PENERIMA),
             () => this.sippol.sleep(this.sippol.opdelay),
             () => this.fetch()
         ]);
@@ -401,7 +401,7 @@ class SippolBridge {
         w.push(() => new Promise((resolve, reject) => {
             const term = queue.data.term ? queue.data.term : queue.data.info;
             if (!term) return resolve();
-            this.sippol.filterData(term, this.sippol.FILTER_PENERIMA)
+            this.sippol.filterData(term, this.sippol.DATA_PENERIMA)
                 .then(() => resolve())
                 .catch(() => {
                     this.sippol.resetFilter()

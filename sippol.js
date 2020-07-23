@@ -36,10 +36,10 @@ class Sippol extends WebRobot {
     SPP_CAIR = 4
     SPP_BATAL = 5
 
-    FILTER_SPP = 1
-    FILTER_SPM = 2
-    FILTER_SP2D = 3
-    FILTER_PENERIMA = 4
+    DATA_SPP = 1
+    DATA_SPM = 2
+    DATA_SP2D = 3
+    DATA_PENERIMA = 4
 
     MAIN_PATH = '#/keuda-spp';
 
@@ -129,18 +129,18 @@ class Sippol extends WebRobot {
         }
     }
 
-    filterKey(type) {
-        if (!this.filterKeys) {
-            this.filterKeys = {
-                'noSpp': this.FILTER_SPP,
-                'noSpm': this.FILTER_SPM,
-                'noSp2d': this.FILTER_SP2D,
-                'key': this.FILTER_PENERIMA
+    dataKey(type) {
+        if (!this.dataKeys) {
+            this.dataKeys = {
+                'noSpp': this.DATA_SPP,
+                'noSpm': this.DATA_SPM,
+                'noSp2d': this.DATA_SP2D,
+                'key': this.DATA_PENERIMA
             };
         }
-        const idx = Object.values(this.filterKeys).indexOf(type);
+        const idx = Object.values(this.dataKeys).indexOf(type);
         if (idx >= 0) {
-            return Object.keys(this.filterKeys)[idx];
+            return Object.keys(this.dataKeys)[idx];
         }
     }
 
@@ -237,17 +237,17 @@ class Sippol extends WebRobot {
         return this.waitAndClick(By.xpath('//button[@ng-click="vm.loadAll()"]'));
     }
 
-    filterData(data, type = this.FILTER_SPM) {
+    filterData(data, type = this.DATA_SPM) {
         return new Promise((resolve, reject) => {
-            const m = this.filterKey(type);
+            const m = this.dataKey(type);
             if (!m) {
                 return reject('Invalid filter type: ' + type);
             }
             this.waitFor(By.xpath('//input[@ng-model="vm._X_"]'.replace(/_X_/, m)))
                 .then((el) => {
-                    this.fillInput(el, null == data ? data : data + (type != this.FILTER_PENERIMA ? Key.ENTER : ''))
+                    this.fillInput(el, null == data ? data : data + (type != this.DATA_PENERIMA ? Key.ENTER : ''))
                         .then(() => {
-                            if (type == this.FILTER_PENERIMA) {
+                            if (type == this.DATA_PENERIMA) {
                                 this.refreshData()
                                     .then(() => resolve())
                                     .catch((err) => reject(err))
@@ -265,10 +265,10 @@ class Sippol extends WebRobot {
 
     resetFilter() {
         return Work.works([
-            () => this.filterData(null, this.FILTER_SPP),
-            () => this.filterData(null, this.FILTER_SPM),
-            () => this.filterData(null, this.FILTER_SP2D),
-            () => this.filterData(null, this.FILTER_PENERIMA),
+            () => this.filterData(null, this.DATA_SPP),
+            () => this.filterData(null, this.DATA_SPM),
+            () => this.filterData(null, this.DATA_SP2D),
+            () => this.filterData(null, this.DATA_PENERIMA),
         ]);
     }
 
