@@ -49,7 +49,6 @@ class SippolBridge {
                     this.queue.next();
                 })
                 .catch((err) => {
-                    if (err) console.error(err);
                     queue.setStatus(SippolQueue.STATUS_ERROR);
                     queue.setResult(err);
                     if (typeof queue.reject == 'function') {
