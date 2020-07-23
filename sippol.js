@@ -41,6 +41,9 @@ class Sippol extends WebRobot {
     DATA_SP2D = 3
     DATA_PENERIMA = 4
 
+    SORT_ASCENDING = 1
+    SORT_DESCENDING = 2
+
     MAIN_PATH = '#/keuda-spp';
 
     initialize() {
@@ -274,6 +277,69 @@ class Sippol extends WebRobot {
             () => this.filterData(null, this.DATA_SP2D),
             () => this.filterData(null, this.DATA_PENERIMA),
         ]);
+    }
+
+    sortData(type, dir = this.SORT_ASCENDING) {
+        return new Promise((resolve, reject) => {
+            const m = this.dataKey(type);
+            if (!m) {
+                return reject('Invalid sort type: ' + type);
+            }
+            this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m)))
+                .then((el) => {
+                    this.ensureSorted(el, dir)
+                        .then(() => resolve())
+                        .catch((err) => reject(err))
+                    ;
+                })
+                .catch((err) => reject(err))
+            ;
+        });
+    }
+
+    ensureSorted(el, dir) {
+        let sorted;
+        const f = () => {
+            return new Promise((resolve, reject) => {
+                if (sorted) return resolve();
+                this.isSorted(el, dir)
+                    .then((sort) => {
+                        if (sort) sorted = sort;
+                        resolve();
+                    })
+                    .catch((err) => reject(err))
+                ;
+            })
+        }
+        return Work.works([f, f]);
+    }
+
+    isSorted(el, dir) {
+        if (!el) return Promise.reject('No sort element');
+        return new Promise((resolve, reject) => {
+            el.getAttribute('class')
+                .then((xclass) => {
+                    xclass = xclass.substr(xclass.indexOf(' ')).trim();
+                    let sorted;
+                    switch (dir) {
+                        case this.SORT_ASCENDING:
+                            sorted = xclass == 'glyphicon-sort-by-attribute';
+                            break;
+                        case this.SORT_DESCENDING:
+                            sorted = xclass == 'glyphicon-sort-by-attribute-alt';
+                            break;
+                    }
+                    if (!sorted) {
+                        el.click()
+                            .then(() => resolve(false))
+                            .catch((err) => reject(err))
+                        ;
+                    } else {
+                        resolve(true);
+                    }
+                })
+            ;
+        })
     }
 
     findPager(pager) {
