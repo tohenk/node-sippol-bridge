@@ -162,10 +162,14 @@ class Sippol extends WebRobot {
                             this.driver = null;
                             resolve();
                         })
-                        .catch((err) => reject(err))
+                        .catch((err) => {
+                            this.driver = null;
+                            reject(err);
+                        })
                     ;
                 }
                 catch (err) {
+                    this.driver = null;
                     reject(err);
                 }
             } else {
