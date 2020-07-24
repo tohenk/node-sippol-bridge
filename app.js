@@ -46,6 +46,7 @@ class App {
     uploads = {}
     bridge = null
     bridge2 = null
+    sockets = []
 
     initialize() {
         let filename, profile;
@@ -99,6 +100,11 @@ class App {
     createBridge() {
         if (null == this.bridge) {
             this.bridge = new SippolBridge(this.config);
+            this.bridge
+                .on('queue', (queue) => this.handleNotify())
+                .on('queue-done', (queue) => this.handleNotify())
+                .on('queue-error', (queue) => this.handleNotify())
+            ;
         }
     }
 
@@ -134,6 +140,19 @@ class App {
         socket
             .on('disconnect', () => {
                 console.log('Client disconnected: %s', socket.id);
+                const idx = this.sockets.indexOf(socket);
+                if (idx >= 0) {
+                    this.sockets.splice(idx);
+                }
+            })
+            .on('notify', () => {
+                if (this.sockets.indexOf(socket) < 0) {
+                    this.sockets.push(socket);
+                    console.log('Client notification enabled: %s', socket.id);
+                }
+            })
+            .on('status', () => {
+                socket.emit('status', this.bridge.getStatus());
             })
             .on('setup', (data) => {
                 if (data.callback) {
@@ -232,6 +251,12 @@ class App {
                 socket.emit('list', res);
             })
         ;
+    }
+
+    handleNotify() {
+        this.sockets.forEach((socket) => {
+            socket.emit('status', this.bridge.getStatus());
+        });
     }
 
     run() {
