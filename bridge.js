@@ -26,18 +26,21 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const {Sippol} = require('./sippol');
+const EventEmitter = require('events');
+const { Sippol } = require('./sippol');
 const Work = require('./lib/work');
 const Queue = require('./lib/queue');
 
-class SippolBridge {
+class SippolBridge extends EventEmitter {
 
     VERSION = 'SIPPOL-BRIDGE-1.0'
 
     constructor(options) {
+        super();
         this.sippol = new Sippol(this.getOptions(options));
         this.queues = [];
         this.queue = new Queue([], (queue) => {
+            this.emit('queue', queue);
             queue.setStatus(SippolQueue.STATUS_PROCESSING);
             this.processQueue(queue)
                 .then((res) => {
@@ -46,6 +49,7 @@ class SippolBridge {
                     if (typeof queue.resolve == 'function') {
                         queue.resolve(res);
                     }
+                    this.emit('queue-done', queue);
                     this.queue.next();
                 })
                 .catch((err) => {
@@ -54,6 +58,7 @@ class SippolBridge {
                     if (typeof queue.reject == 'function') {
                         queue.reject(err);
                     }
+                    this.emit('queue-error', queue);
                     this.queue.next();
                 })
             ;
@@ -74,6 +79,18 @@ class SippolBridge {
             delete options.docs;
         }
         return options;
+    }
+
+    getStatus() {
+        const status = {
+            version: this.VERSION,
+            total: this.queues.length,
+            queue: this.queue.queues.length,
+        }
+        if (this.queue.queue) {
+            status.current = this.queue.queue.getInfo();
+        }
+        return status;
     }
 
     processQueue(queue) {
