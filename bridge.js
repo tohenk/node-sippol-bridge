@@ -35,12 +35,17 @@ class SippolBridge extends EventEmitter {
 
     VERSION = 'SIPPOL-BRIDGE-1.0'
 
+    time = null
+
     constructor(options) {
         super();
+        this.time = new Date();
         this.sippol = new Sippol(this.getOptions(options));
         this.queues = [];
         this.queue = new Queue([], (queue) => {
+            this.xqueue = queue;
             this.emit('queue', queue);
+            queue.setTime();
             queue.setStatus(SippolQueue.STATUS_PROCESSING);
             this.processQueue(queue)
                 .then((res) => {
@@ -84,11 +89,21 @@ class SippolBridge extends EventEmitter {
     getStatus() {
         const status = {
             version: this.VERSION,
+            time: this.time.toString(),
             total: this.queues.length,
             queue: this.queue.queues.length,
         }
         if (this.queue.queue) {
             status.current = this.queue.queue.getInfo();
+        }
+        if (this.xqueue) {
+            status.last = {};
+            status.last.name = this.xqueue.getInfo();
+            status.last.time = this.xqueue.time.toString();
+            status.last.status = this.xqueue.getStatusText();
+            if (status.last.status == SippolQueue.STATUS_ERROR && status.xqueue.result) {
+                status.last.error = util.inspect(status.xqueue.result);
+            }
         }
         return status;
     }
@@ -511,6 +526,13 @@ class SippolQueue
             this.result = result;
             console.log('Queue %s result: %s', this.getInfo(), this.result);
         }
+    }
+
+    setTime(time) {
+        if (time == null || time == undefined) {
+            time = new Date();
+        }
+        this.time = time;
     }
 
     getTextFromId(id, values) {
