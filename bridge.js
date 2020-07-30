@@ -99,7 +99,9 @@ class SippolBridge extends EventEmitter {
         if (this.xqueue) {
             status.last = {};
             status.last.name = this.xqueue.getInfo();
-            status.last.time = this.xqueue.time.toString();
+            if (this.xqueue.time) {
+                status.last.time = this.xqueue.time.toString();
+            }
             status.last.status = this.xqueue.getStatusText();
             if (status.last.status == SippolQueue.STATUS_ERROR && status.xqueue.result) {
                 status.last.error = util.inspect(status.xqueue.result);
