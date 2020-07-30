@@ -43,7 +43,6 @@ class SippolBridge extends EventEmitter {
         this.sippol = new Sippol(this.getOptions(options));
         this.queues = [];
         this.queue = new Queue([], (queue) => {
-            this.xqueue = queue;
             this.emit('queue', queue);
             queue.setTime();
             queue.setStatus(SippolQueue.STATUS_PROCESSING);
@@ -51,6 +50,7 @@ class SippolBridge extends EventEmitter {
                 .then((res) => {
                     queue.setStatus(SippolQueue.STATUS_DONE);
                     queue.setResult(res);
+                    this.setLastQueue(queue);
                     if (typeof queue.resolve == 'function') {
                         queue.resolve(res);
                     }
@@ -60,6 +60,7 @@ class SippolBridge extends EventEmitter {
                 .catch((err) => {
                     queue.setStatus(SippolQueue.STATUS_ERROR);
                     queue.setResult(err);
+                    this.setLastQueue(queue);
                     if (typeof queue.reject == 'function') {
                         queue.reject(err);
                     }
@@ -108,6 +109,12 @@ class SippolBridge extends EventEmitter {
             }
         }
         return status;
+    }
+
+    setLastQueue(queue) {
+        if (queue.type != SippolQueue.QUEUE_CALLBACK) {
+            this.xqueue = queue;
+        }
     }
 
     processQueue(queue) {
