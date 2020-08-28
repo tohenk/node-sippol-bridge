@@ -52,6 +52,7 @@ class Sippol extends WebRobot {
         }
         this.delay = this.options.delay || 500;
         this.opdelay = this.options.opdelay || 400;
+        this.updelay = this.options.updelay || 30000;
         this.username = this.options.username;
         this.password = this.options.password;
         this.maps = this.options.maps || {};
@@ -1198,6 +1199,7 @@ class Sippol extends WebRobot {
                                             console.log('Uploading document %s', docs[doctype]);
                                             files[idx].sendKeys(docs[doctype])
                                                 .then(() => {
+                                                    const stime = Date.now();
                                                     // wait for upload to complete
                                                     const waitUpload = () => {
                                                         xel.isDisplayed()
@@ -1207,13 +1209,21 @@ class Sippol extends WebRobot {
                                                                     result.updated.push(doctype);
                                                                     resolve();
                                                                 } else {
-                                                                    setTimeout(waitUpload, 100);
+                                                                    // should we retry?
+                                                                    const ctime = Date.now();
+                                                                    if (ctime - stime <= this.updelay) {
+                                                                        setTimeout(waitUpload, 100);
+                                                                    } else {
+                                                                        console.log('Upload for %s timed out!', docs[doctype]);
+                                                                        reject();
+                                                                    }
                                                                 }
                                                             })
                                                         ;
                                                     }
                                                     waitUpload();
                                                 })
+                                                .catch((err) => reject(err))
                                             ;
                                         } else {
                                             resolve();
