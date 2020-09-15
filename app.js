@@ -111,7 +111,6 @@ class App {
     createBridge2() {
         if (null == this.bridge2) {
             const config = Object.assign({}, this.config);
-            config.browser = 'firefox';
             if (config.browser == this.config.browser) config.session = 's2';
             this.bridge2 = new SippolBridge(config);
         }
