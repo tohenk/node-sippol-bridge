@@ -7,7 +7,7 @@
   "license": "MIT",
   "dependencies": {
     "bufferutil": "^4.0.1",
-    "easy-pdf-merge": "^0.2.3",
+    "easy-pdf-merge": "^0.2.5",
     "selenium-webdriver": "^4.0.0-alpha.7",
     "socket.io": "^2.3.0",
     "utf-8-validate": "^5.0.2"
