@@ -162,6 +162,9 @@ class SippolBridge extends EventEmitter {
                 if (filter.nominal && items[i].Nominal != filter.nominal) {
                     continue;
                 }
+                if (filter.untuk && items[i].Untuk != filter.untuk) {
+                    continue;
+                }
                 if (filter.year && (!items[i].SPPTanggal || items[i].SPPTanggal.indexOf(filter.year) != 0)) {
                     continue;
                 }
@@ -319,11 +322,12 @@ class SippolBridge extends EventEmitter {
         let id, matches;
         const penerima = queue.getMappedData('penerima.penerima');
         const jumlah = queue.getMappedData('rincian.jumlah');
+        const untuk = queue.getMappedData('spp.untuk');
         return this.do([
             () => new Promise((resolve, reject) => {
                 this.getPenerima(penerima)
                     .then((items) => {
-                        matches = this.filterItems(items, {nominal: jumlah});
+                        matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
                         if (matches.length) {
                             if (queue.callback) {
                                 let idx = -1;
@@ -371,7 +375,7 @@ class SippolBridge extends EventEmitter {
             () => new Promise((resolve, reject) => {
                 this.getPenerima(penerima)
                     .then((items) => {
-                        matches = this.filterItems(items, {nominal: jumlah});
+                        matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
                         if (matches.length && queue.callback) {
                             const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
                             this.addQueue(callbackQueue);
