@@ -255,7 +255,8 @@ class SippolBridge extends EventEmitter {
 
     notifyCallback(url, data) {
         return new Promise((resolve, reject) => {
-            let status, result;
+            // https://nodejs.org/dist/latest-v14.x/docs/api/http.html#http_http_request_options_callback
+            let buff, result, err;
             const parsedUrl = require('url').parse(url);
             const http = require('https:' == parsedUrl.protocol ? 'https' : 'http');
             const payload = JSON.stringify(data);
@@ -269,17 +270,25 @@ class SippolBridge extends EventEmitter {
             const req = http.request(url, options, (res) => {
                 res.setEncoding('utf8');
                 res.on('data', (chunk) => {
-                    result = chunk;
+                    if (buff) {
+                        buff += chunk;
+                    } else {
+                        buff = chunk;
+                    }
                 });
                 res.on('end', () => {
-                    if (result) {
-                        status = util.format('%s', result);
-                    }
-                    resolve(status);
+                    result = buff;
                 });
             });
             req.on('error', (e) => {
-                status = util.format('Error: %s', e.message);
+                err = e;
+            });
+            req.on('close', () => {
+                if (result) {
+                    resolve(util.format('%s', result));
+                } else {
+                    reject(err);
+                }
             });
             req.write(payload);
             req.end();
