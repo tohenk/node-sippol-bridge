@@ -119,7 +119,13 @@ class App {
     createServer() {
         const port = Cmd.get('port') | 3000;
         const http = require('http').createServer();
-        const io = require('socket.io')(http);
+        const opts = {};
+        if (this.config.cors) {
+            opts.cors = this.config.cors;
+        } else {
+            opts.cors = {origin: '*'};
+        }
+        const io = require('socket.io')(http, opts);
         io.of('/sippol')
             .on('connection', (socket) => {
                 this.handleConnection(socket);
