@@ -27,9 +27,9 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const EventEmitter = require('events');
+const Work = require('@ntlab/ntlib/work');
+const Queue = require('@ntlab/ntlib/queue');
 const { Sippol } = require('./sippol');
-const Work = require('./lib/work');
-const Queue = require('./lib/queue');
 
 class SippolBridge extends EventEmitter {
 

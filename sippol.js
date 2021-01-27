@@ -23,10 +23,10 @@
  */
 
 const fs = require('fs');
-const {By, Key} = require('selenium-webdriver');
-const WebRobot = require('./lib/webrobot');
-const Queue = require('./lib/queue');
-const Work = require('./lib/work');
+const { By, Key } = require('selenium-webdriver');
+const Queue = require('@ntlab/ntlib/queue');
+const Work = require('@ntlab/ntlib/work');
+const WebRobot = require('@ntlab/webrobot');
 
 class Sippol extends WebRobot {
 

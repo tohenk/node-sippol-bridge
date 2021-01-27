@@ -24,8 +24,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const Cmd = require('./lib/cmd');
-const Work = require('./lib/work');
+const Cmd = require('@ntlab/ntlib/cmd');
+const Work = require('@ntlab/ntlib/work');
 const { SippolBridge, SippolQueue } = require('./bridge');
 
 Cmd.addBool('help', 'h', 'Show program usage').setAccessible(false);
