@@ -501,9 +501,8 @@ class SippolBridge extends EventEmitter {
 
     saveDoc(filename, data) {
         return new Promise((resolve, reject) => {
-            if (data) {
-                const buffer = Buffer.from(data, 'base64');
-                fs.writeFile(filename, new Uint8Array(buffer), (err) => {
+            if (Buffer.isBuffer(data)) {
+                fs.writeFile(filename, new Uint8Array(data), (err) => {
                     if (err) return reject(err);
                     resolve(filename);
                 });

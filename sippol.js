@@ -1051,7 +1051,7 @@ class Sippol extends WebRobot {
                 value = data[value];
             }
             // handle tgl
-            if (identifier.indexOf('tgl') == 0) {
+            if (identifier.indexOf('tgl') == 0 && typeof value == 'string') {
                 let p = value.indexOf(' ');
                 if (p > 0) {
                     value = value.substr(0, p);

@@ -189,20 +189,32 @@ class App {
             .on('upload-part', (data) => {
                 let res;
                 if (data.Id) {
-                    if (data.seq == 1) {
+                    if (this.uploads[data.Id] == undefined) {
                         this.uploads[data.Id] = {Id: data.Id};
                         if (data.info) this.uploads[data.Id].info = data.info;
                         if (data.term) this.uploads[data.Id].term = data.term;
                     }
+                    let key;
                     let parts = [];
+                    let partComplete = false;
                     Object.keys(data).forEach((k) => {
-                        if (['Id', 'info', 'term', 'seq', 'tot'].indexOf(k) < 0) {
-                            this.uploads[data.Id][k] = data[k];
-                            parts.push(k);
+                        if (['Id', 'info', 'term', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
+                            let buff = Buffer.from(data[k], 'base64');
+                            if (this.uploads[data.Id][k] != undefined) {
+                                buff = Buffer.concat([this.uploads[data.Id][k], buff]);
+                            }
+                            this.uploads[data.Id][k] = buff;
+                            key = k;
                         }
                     });
+                    if (this.uploads[data.Id][key] != undefined) {
+                        if (this.uploads[data.Id][key].length == data.size) {
+                            partComplete = true;
+                            parts.push(key);
+                        }
+                    }
                     if (parts.length) {
-                        if (data.seq == data.tot) {
+                        if (data.seq == data.tot && partComplete) {
                             const udata = this.uploads[data.Id];
                             const queue = SippolQueue.createUploadQueue(udata, socket.callback);
                             res = this.bridge.addQueue(queue);
@@ -212,6 +224,8 @@ class App {
                         } else {
                             res = {part: parts};
                         }
+                    } else if (!partComplete && key) {
+                        res = {part: [key], len: this.uploads[data.Id][key].length};
                     } else {
                         res = {error: 'Document part not found for ' + data.Id};
                     }
