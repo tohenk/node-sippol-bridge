@@ -3,15 +3,15 @@
 		"tglSpp": "TGL_SPP",
 		"jenis": "number:1",
 		"syarat": "number:26",
-		"pk": "number:4819",
-		"pkOto": "number:2314",
+		"pk": "number:2475",
+		"pkOto": "number:2275",
 		"pegOto2": "number:1005",
 		"untuk": "UNTUK",
 		"ket": "KET"
 	},
 	"spm": {
 		"tglSpm": "TGL_SPM",
-		"pkSpm": "number:2118"
+		"pkSpm": "number:2075"
 	},
 	"penerima": {
 		"penerima": "PENERIMA",
