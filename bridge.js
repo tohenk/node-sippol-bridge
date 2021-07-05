@@ -317,8 +317,16 @@ class SippolBridge extends EventEmitter {
                 .then((items) => {
                     const matches = this.filterItems(items, {year: queue.data.year});
                     if (matches.length && queue.callback) {
-                        const callbackQueue = SippolQueue.createCallbackQueue({items: matches}, queue.callback);
-                        this.addQueue(callbackQueue);
+                        // divide items
+                        let maxNotifiedItems = 500;
+                        let items = matches;
+                        while (items.length) {
+                            let n = maxNotifiedItems > 0 && items.length > maxNotifiedItems ?
+                                maxNotifiedItems : items.length;
+                            let part = items.splice(0, n);
+                            const callbackQueue = SippolQueue.createCallbackQueue({items: part}, queue.callback);
+                            this.addQueue(callbackQueue);
+                        }
                     }
                     resolve(matches);
                 })
