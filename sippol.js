@@ -133,7 +133,7 @@ class Sippol extends WebRobot {
         if (dtpart.length == 3) {
             if (dtpart[2].length < 4) {
                 const now = new Date();
-                dtpart[2] = (now.getFullYear() % 100) * 100 + parseInt(dtpart[2]);
+                dtpart[2] = parseInt(now.getFullYear().toString().substr(0, 2) + dtpart[2]);
             }
             value = new Date(parseInt(dtpart[2]), parseInt(dtpart[1]) - 1, parseInt(dtpart[0]));
         }
