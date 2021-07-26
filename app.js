@@ -238,21 +238,28 @@ class App {
             })
             .on('query', (data) => {
                 console.log('Query: %s', data.term);
-                const f = () => new Promise((resolve, reject) => {
-                    const queue = SippolQueue.createQueryQueue({term: data.term}, socket.callback);
-                    this.bridge.addQueue(queue);
+                if (data.notify) {
+                    const queue = SippolQueue.createQueryQueue({term: data.term, notify: true}, socket.callback);
                     queue.info = data.term;
-                    queue.resolve = resolve;
-                    queue.reject = reject;
-                });
-                f()
-                    .then((items) => {
-                        socket.emit('query', {result: items});
-                    })
-                    .catch((err) => {
-                        socket.emit('query', {error: err instanceof Error ? err.message : err});
-                    })
-                ;
+                    let res = this.bridge.addQueue(queue);
+                    socket.emit('query', res);
+                } else {
+                    const f = () => new Promise((resolve, reject) => {
+                        const queue = SippolQueue.createQueryQueue({term: data.term}, socket.callback);
+                        this.bridge.addQueue(queue);
+                        queue.info = data.term;
+                        queue.resolve = resolve;
+                        queue.reject = reject;
+                    });
+                    f()
+                        .then((items) => {
+                            socket.emit('query', {result: items});
+                        })
+                        .catch((err) => {
+                            socket.emit('query', {error: err instanceof Error ? err.message : err});
+                        })
+                    ;
+                }
             })
             .on('list', (data) => {
                 this.createBridge2();

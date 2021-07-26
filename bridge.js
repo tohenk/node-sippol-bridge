@@ -84,6 +84,10 @@ class SippolBridge extends EventEmitter {
             this.docs = options.docs;
             delete options.docs;
         }
+        if (options.maxNotifiedItems) {
+            this.maxNotifiedItems = options.maxNotifiedItems;
+            delete options.maxNotifiedItems;
+        }
         return options;
     }
 
@@ -253,6 +257,18 @@ class SippolBridge extends EventEmitter {
         ]);
     }
 
+    notifyItems(items, callback) {
+        let maxNotifiedItems = this.maxNotifiedItems || 500;
+        let parts = items;
+        while (parts.length) {
+            let n = maxNotifiedItems > 0 && parts.length > maxNotifiedItems ?
+                maxNotifiedItems : parts.length;
+            let part = parts.splice(0, n);
+            const callbackQueue = SippolQueue.createCallbackQueue({items: part}, callback);
+            this.addQueue(callbackQueue);
+        }
+    }
+
     notifyCallback(url, data) {
         return new Promise((resolve, reject) => {
             // https://nodejs.org/dist/latest-v14.x/docs/api/http.html#http_http_request_options_callback
@@ -304,6 +320,9 @@ class SippolBridge extends EventEmitter {
             this.getPenerima(queue.data.term)
                 .then((items) => {
                     const matches = this.filterItems(items);
+                    if (matches.length && queue.callback && queue.data.notify) {
+                        this.notifyItems(matches, queue.callback);
+                    }
                     resolve(matches);
                 })
                 .catch((err) => reject(err))
@@ -317,16 +336,7 @@ class SippolBridge extends EventEmitter {
                 .then((items) => {
                     const matches = this.filterItems(items, {year: queue.data.year});
                     if (matches.length && queue.callback) {
-                        // divide items
-                        let maxNotifiedItems = 500;
-                        let items = matches;
-                        while (items.length) {
-                            let n = maxNotifiedItems > 0 && items.length > maxNotifiedItems ?
-                                maxNotifiedItems : items.length;
-                            let part = items.splice(0, n);
-                            const callbackQueue = SippolQueue.createCallbackQueue({items: part}, queue.callback);
-                            this.addQueue(callbackQueue);
-                        }
+                        this.notifyItems(matches, queue.callback);
                     }
                     resolve(matches);
                 })
