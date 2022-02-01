@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Toha <tohenk@yahoo.com>
+ * Copyright (c) 2020-2022 Toha <tohenk@yahoo.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -24,9 +24,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
 const Cmd = require('@ntlab/ntlib/cmd');
 const Work = require('@ntlab/ntlib/work');
-const { SippolBridge, SippolQueue } = require('./bridge');
+const SippolBridge = require('./bridge');
+const SippolQueue = require('./queue');
+const SippolNotifier = require('./notifier');
 
 Cmd.addBool('help', 'h', 'Show program usage').setAccessible(false);
 Cmd.addVar('config', 'c', 'Set configuration file', 'filename');
@@ -42,11 +45,13 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
 
 class App {
 
+    VERSION = 'SIPPOL-BRIDGE-1.0'
+
     config = {}
-    uploads = {}
-    bridge = null
-    bridge2 = null
+    bridges = []
     sockets = []
+    uploads = {}
+    sessions = {}
 
     initialize() {
         let filename, profile;
@@ -54,17 +59,19 @@ class App {
         filename = Cmd.get('config') ? Cmd.get('config') : path.join(__dirname, 'config.json');
         if (fs.existsSync(filename)) {
             console.log('Reading configuration %s', filename);
-            this.config = JSON.parse(fs.readFileSync(filename));
+            const config = JSON.parse(fs.readFileSync(filename));
+            if (config.global) {
+                this.config = config.global;
+                this.configs = config.bridges;
+            } else {
+                this.config = config;
+            }
         }
         if (Cmd.get('url')) this.config.url = Cmd.get('url');
         if (Cmd.get('username')) this.config.username = Cmd.get('username');
         if (Cmd.get('password')) this.config.password = Cmd.get('password');
         if (!this.config.workdir) this.config.workdir = __dirname;
 
-        if (!this.config.username || !this.config.password) {
-            console.error('Both username or password must be supplied!');
-            return;
-        }
         // load form maps
         filename = path.join(__dirname, 'maps.json');
         if (fs.existsSync(filename)) {
@@ -94,26 +101,42 @@ class App {
                 this.config[key] = this.config.profiles[profile][key];
             }
         }
+        // add default bridges
+        if (!this.configs) {
+            this.configs = {yr: {year: new Date().getFullYear()}};
+        }
         return true;
     }
 
-    createBridge() {
-        if (null == this.bridge) {
-            this.bridge = new SippolBridge(this.config);
-            this.bridge
-                .on('queue', (queue) => this.handleNotify())
-                .on('queue-done', (queue) => this.handleNotify())
-                .on('queue-error', (queue) => this.handleNotify())
-            ;
-        }
+    createDequeuer() {
+        this.dequeue = SippolQueue.createDequeuer();
+        this.dequeue.setInfo({version: this.VERSION});
+        this.dequeue
+            .on('queue', queue => this.handleNotify(queue))
+            .on('queue-done', queue => this.handleNotify(queue))
+            .on('queue-error', queue => this.handleNotify(queue))
+        ;
     }
 
-    createBridge2() {
-        if (null == this.bridge2) {
-            const config = Object.assign({}, this.config);
-            if (config.browser == this.config.browser) config.session = 's2';
-            this.bridge2 = new SippolBridge(config);
-        }
+    createBridges() {
+        Object.keys(this.configs).forEach(name => {
+            let options = this.configs[name];
+            let config = Object.assign({}, this.config, options);
+            let browser = config.browser ? config.browser : 'default';
+            if (browser) {
+                if (!this.sessions[browser]) this.sessions[browser] = 0;
+                this.sessions[browser]++;
+                if (this.sessions[browser] > 1) config.session = 's' + this.sessions[browser];
+            }
+            if (!config.username || !config.password) {
+                throw new Error(util.format('Unable to create bridge %s: username or password must be supplied!', name));
+            }
+            let bridge = new SippolBridge(config);
+            bridge.name = name;
+            bridge.year = config.year;
+            this.bridges.push(bridge);
+            console.log('Sippol bridge created: %s (%s)', name, bridge.accepts ? bridge.accepts.join(', ') : '*');
+        });
     }
 
     createServer() {
@@ -127,16 +150,22 @@ class App {
         }
         const io = require('socket.io')(http, opts);
         io.of('/sippol')
-            .on('connection', (socket) => {
+            .on('connection', socket => {
                 this.handleConnection(socket);
             })
         ;
         http.listen(port, () => {
             console.log('Application ready on port %s...', port);
-            Work.works([
-                () => this.bridge.isReady(),
-                () => this.bridge.selfTest(),
-            ]);
+            const selfTests = [];
+            this.bridges.forEach(bridge => {
+                selfTests.push(() => bridge.selfTest());
+            });
+            Work.works(selfTests)
+                .then(() => {
+                    this.dequeue.setConsumer(this);
+                    console.log('Queue processing is ready...');
+                })
+            ;
         });
     }
 
@@ -157,26 +186,27 @@ class App {
                 }
             })
             .on('status', () => {
-                socket.emit('status', this.bridge.getStatus());
+                socket.emit('status', this.dequeue.getStatus());
             })
-            .on('setup', (data) => {
+            .on('setup', data => {
                 if (data.callback) {
                     socket.callback = data.callback;
                 }
-                socket.emit('setup', {version: this.bridge.VERSION});
+                socket.emit('setup', {version: this.VERSION});
             })
-            .on('spp', (data) => {
+            .on('spp', data => {
                 const queue = SippolQueue.createSppQueue(data, socket.callback);
-                const res = this.bridge.addQueue(queue);
+                const res = SippolQueue.addQueue(queue);
+                queue.maps = this.configs.maps;
                 queue.info = queue.getMappedData('penerima.penerima');
-                console.log('SPP: %s %s', data[this.bridge.datakey], queue.info ? queue.info : '');
+                console.log('SPP: %s %s', data[this.config.datakey], queue.info ? queue.info : '');
                 socket.emit('spp', res);
             })
-            .on('upload', (data) => {
+            .on('upload', data => {
                 let res;
                 if (data.Id) {
                     const queue = SippolQueue.createUploadQueue(data, socket.callback);
-                    res = this.bridge.addQueue(queue);
+                    res = SippolQueue.addQueue(queue);
                     if (data.info) queue.info = data.info;
                     console.log('Upload: %s %s', data.Id, queue.info ? queue.info : '');
                 } else {
@@ -186,18 +216,19 @@ class App {
                 }
                 socket.emit('upload', res);
             })
-            .on('upload-part', (data) => {
+            .on('upload-part', data => {
                 let res;
                 if (data.Id) {
                     if (this.uploads[data.Id] == undefined) {
                         this.uploads[data.Id] = {Id: data.Id};
+                        if (data.year) this.uploads[data.Id].year = data.year;
                         if (data.info) this.uploads[data.Id].info = data.info;
                         if (data.term) this.uploads[data.Id].term = data.term;
                     }
                     let key;
                     let parts = [];
                     let partComplete = false;
-                    Object.keys(data).forEach((k) => {
+                    Object.keys(data).forEach(k => {
                         if (['Id', 'info', 'term', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
                             let buff = Buffer.from(data[k], 'base64');
                             if (this.uploads[data.Id][k] != undefined) {
@@ -217,7 +248,7 @@ class App {
                         if (data.seq == data.tot && partComplete) {
                             const udata = this.uploads[data.Id];
                             const queue = SippolQueue.createUploadQueue(udata, socket.callback);
-                            res = this.bridge.addQueue(queue);
+                            res = SippolQueue.addQueue(queue);
                             if (udata.info) queue.info = udata.info;
                             console.log('Upload from partial: %s %s', udata.Id, queue.info ? queue.info : '');
                             delete this.uploads[data.Id];
@@ -236,35 +267,34 @@ class App {
                 }
                 socket.emit('upload-part', res);
             })
-            .on('query', (data) => {
+            .on('query', data => {
                 console.log('Query: %s', data.term);
                 if (data.notify) {
-                    const queue = SippolQueue.createQueryQueue({term: data.term, notify: true}, socket.callback);
+                    const queue = SippolQueue.createQueryQueue({year: data.year, term: data.term, notify: true}, socket.callback);
                     queue.info = data.term;
-                    let res = this.bridge.addQueue(queue);
+                    let res = SippolQueue.addQueue(queue);
                     socket.emit('query', res);
                 } else {
                     const f = () => new Promise((resolve, reject) => {
-                        const queue = SippolQueue.createQueryQueue({term: data.term}, socket.callback);
-                        this.bridge.addQueue(queue);
+                        const queue = SippolQueue.createQueryQueue({year: data.year, term: data.term}, socket.callback);
+                        SippolQueue.addQueue(queue);
                         queue.info = data.term;
                         queue.resolve = resolve;
                         queue.reject = reject;
                     });
                     f()
-                        .then((items) => {
+                        .then(items => {
                             socket.emit('query', {result: items});
                         })
-                        .catch((err) => {
+                        .catch(err => {
                             socket.emit('query', {error: err instanceof Error ? err.message : err});
                         })
                     ;
                 }
             })
-            .on('list', (data) => {
-                this.createBridge2();
-                const options = {year: data.year};
-                ['spp', 'spm', 'sp2d'].forEach((key) => {
+            .on('list', data => {
+                const options = {year: data.year, timeout: 0};
+                ['spp', 'spm', 'sp2d'].forEach(key => {
                     if (data[key] && (
                         !isNaN(data[key]) || (typeof data[key] == 'string' && data[key].indexOf('T') > 0)
                         )
@@ -273,21 +303,102 @@ class App {
                     }
                 });
                 const queue = SippolQueue.createListQueue(options, socket.callback);
-                const res = this.bridge2.addQueue(queue);
+                const res = SippolQueue.addQueue(queue);
                 socket.emit('list', res);
             })
         ;
     }
 
     handleNotify() {
-        this.sockets.forEach((socket) => {
-            socket.emit('status', this.bridge.getStatus());
+        this.sockets.forEach(socket => {
+            socket.emit('status', this.dequeue.getStatus());
         });
+    }
+
+    getQueueHandler(queue) {
+        let bridge;
+        const year = queue.data && queue.data.year ? queue.data.year : null;
+        // get prioritized bridge based on accepts type
+        this.bridges.forEach(b => {
+            if (b.isReady() && b.year == year && Array.isArray(b.accepts) && b.accepts.indexOf(queue.type) >= 0) {
+                bridge = b;
+                return true;
+            }
+        });
+        // fallback to default bridge
+        if (!bridge) {
+            this.bridges.forEach(b => {
+                if (b.isReady() && b.year == year && b.accepts == undefined) {
+                    bridge = b;
+                    return true;
+                }
+            });
+        }
+        return bridge;
+    }
+
+    canHandle(queue) {
+        if (queue.type == SippolQueue.QUEUE_CALLBACK) {
+            return true;
+        }
+        // only handle when bridge is ready
+        let readyCnt = 0;
+        this.bridges.forEach(b => {
+            if (b.isReady()) readyCnt++;
+        });
+        return readyCnt > 0;
+    }
+
+    canHandleNext(queue) {
+        if (queue.type == SippolQueue.QUEUE_CALLBACK) {
+            return !this.notify;
+        }
+        const bridge = this.getQueueHandler(queue);
+        const current = this.dequeue.getCurrent();
+        if (bridge && current) {
+            return current.bridge != bridge && bridge.queue.status != SippolQueue.STATUS_PROCESSING;
+        }
+        return false;
+    }
+
+    processQueue(queue) {
+        if (queue.type == SippolQueue.QUEUE_CALLBACK) {
+            return new Promise((resolve, reject) => {
+                this.notify = true;
+                SippolNotifier.notify(queue)
+                    .then(result => {
+                        this.notify = false;
+                        resolve(result);
+                    })
+                    .catch(err => {
+                        this.notify = false;
+                        reject(err);
+                    })
+                ;
+            });
+        }
+        const bridge = this.getQueueHandler(queue);
+        if (bridge) {
+            bridge.queue = queue;
+            queue.bridge = bridge;
+            switch (queue.type) {
+                case SippolQueue.QUEUE_SPP:
+                    return bridge.createSpp(queue);
+                case SippolQueue.QUEUE_UPLOAD:
+                    return bridge.uploadDocs(queue);
+                case SippolQueue.QUEUE_QUERY:
+                    return bridge.query(queue);
+                case SippolQueue.QUEUE_LIST:
+                    return bridge.listSpp(queue);
+            }
+        }
+        return Promise.reject(util.format('No bridge can handle %s!', queue.getInfo()));
     }
 
     run() {
         if (this.initialize()) {
-            this.createBridge();
+            this.createDequeuer();
+            this.createBridges();
             this.createServer();
             return true;
         }

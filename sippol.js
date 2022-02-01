@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Toha <tohenk@yahoo.com>
+ * Copyright (c) 2020-2022 Toha <tohenk@yahoo.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -185,7 +185,7 @@ class Sippol extends WebRobot {
                             this.driver = null;
                             resolve();
                         })
-                        .catch((err) => {
+                        .catch(err => {
                             this.driver = null;
                             reject(err);
                         })
@@ -218,7 +218,7 @@ class Sippol extends WebRobot {
                         () => this.sleep(this.wait)
                     ])
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 })
                 .catch(() => resolve())
@@ -229,7 +229,7 @@ class Sippol extends WebRobot {
     isLoggedIn() {
         return new Promise((resolve, reject) => {
             this.getDriver().getCurrentUrl()
-                .then((url) => {
+                .then(url => {
                     if (url.indexOf(this.MAIN_PATH) > 0) {
                         resolve();
                     } else {
@@ -271,13 +271,13 @@ class Sippol extends WebRobot {
                 return reject('Invalid filter type: ' + type);
             }
             this.waitFor(By.xpath('//input[@ng-model="vm._X_"]'.replace(/_X_/, m)))
-                .then((el) => {
+                .then(el => {
                     this.fillInput(el, null == data ? data : data + (type != this.DATA_PENERIMA ? Key.ENTER : ''))
                         .then(() => {
                             if (type == this.DATA_PENERIMA) {
                                 this.refreshData()
                                     .then(() => resolve())
-                                    .catch((err) => reject(err))
+                                    .catch(err => reject(err))
                                 ;
                             } else {
                                 resolve();
@@ -285,7 +285,7 @@ class Sippol extends WebRobot {
                         })
                     ;
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -306,13 +306,13 @@ class Sippol extends WebRobot {
                 return reject('Invalid sort type: ' + type);
             }
             this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m)))
-                .then((el) => {
+                .then(el => {
                     this.ensureSorted(el, dir)
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -323,11 +323,11 @@ class Sippol extends WebRobot {
             return new Promise((resolve, reject) => {
                 if (sorted) return resolve();
                 this.isSorted(el, dir)
-                    .then((sort) => {
+                    .then(sort => {
                         if (sort) sorted = sort;
                         resolve();
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             })
         }
@@ -338,7 +338,7 @@ class Sippol extends WebRobot {
         if (!el) return Promise.reject('No sort element');
         return new Promise((resolve, reject) => {
             el.getAttribute('class')
-                .then((xclass) => {
+                .then(xclass => {
                     xclass = xclass.substr(xclass.indexOf(' ')).trim();
                     let sorted;
                     switch (dir) {
@@ -352,7 +352,7 @@ class Sippol extends WebRobot {
                     if (!sorted) {
                         el.click()
                             .then(() => resolve(false))
-                            .catch((err) => reject(err))
+                            .catch(err => reject(err))
                         ;
                     } else {
                         resolve(true);
@@ -365,9 +365,9 @@ class Sippol extends WebRobot {
     findPager(pager) {
         return new Promise((resolve, reject) => {
             this.findElement(pager)
-                .then((el) => {
+                .then(el => {
                     el.isDisplayed()
-                        .then((visible) => {
+                        .then(visible => {
                             if (visible) {
                                 resolve(el);
                             } else {
@@ -376,7 +376,7 @@ class Sippol extends WebRobot {
                         })
                     ;
                 })
-                .catch((err) => resolve())
+                .catch(err => resolve())
             ;
         });
     }
@@ -386,7 +386,7 @@ class Sippol extends WebRobot {
             options = options || {};
             if (typeof options.wait == 'undefined') options.wait = true;
             this.findPager(pager)
-                .then((xpager) => {
+                .then(xpager => {
                     if (!xpager) return resolve();
                     const isPage = ['first', 'prev', 'next', 'last'].indexOf(page) < 0;
                     let needClick = isPage ? true : false;
@@ -397,7 +397,7 @@ class Sippol extends WebRobot {
                             const xpath = isPage ? './/li[contains(@class,"pagination-page")]/a[text()="_PAGE_"]' :
                                 './/li[contains(@class,"pagination-_PAGE_")]/a';
                             xpager.findElements(By.xpath(xpath.replace(/_PAGE_/, page)))
-                                .then((elements) => {
+                                .then(elements => {
                                     if (elements.length) {
                                         xpage = elements[0];
                                     }
@@ -411,9 +411,9 @@ class Sippol extends WebRobot {
                         w.push(() => new Promise((resolve, reject) => {
                             if (!xpage) return resolve();
                             xpage.findElement(By.xpath('./..'))
-                                .then((xel) => {
+                                .then(xel => {
                                     xel.getAttribute('class')
-                                        .then((xclass) => {
+                                        .then(xclass => {
                                             if (xclass.indexOf('disabled') < 0) {
                                                 needClick = true;
                                             }
@@ -429,7 +429,7 @@ class Sippol extends WebRobot {
                         if (!needClick) return resolve();
                         xpage.click()
                             .then(() => resolve())
-                            .catch((err) => reject(err))
+                            .catch(err => reject(err))
                         ;
                     }));
                     if (options.wait) {
@@ -450,7 +450,7 @@ class Sippol extends WebRobot {
         return Work.works([
             () => new Promise((resolve, reject) => {
                 this.navigatePage(pager, 'last')
-                    .then((result) => {
+                    .then(result => {
                         if (result) xpager = result;
                         resolve();
                     })
@@ -459,9 +459,9 @@ class Sippol extends WebRobot {
             () => new Promise((resolve, reject) => {
                 if (!xpager) return resolve();
                 xpager.findElements(By.xpath('.//li[contains(@class,"pagination-page")]'))
-                    .then((elements) => {
+                    .then(elements => {
                         this.getText([By.xpath('.')], elements[elements.length - 1])
-                            .then((xpage) => {
+                            .then(xpage => {
                                 pages = parseInt(xpage);
                                 resolve();
                             })
@@ -497,7 +497,7 @@ class Sippol extends WebRobot {
             let pages = 1;
             const w = () => {
                 this.getDriver().findElements(check)
-                    .then((elements) => {
+                    .then(elements => {
                         // handler to go to next page or resolve when no more pages
                         const nextPageOrResolve = (next = true) => {
                             if (next && pager) {
@@ -513,7 +513,7 @@ class Sippol extends WebRobot {
                                     }
                                 } else {
                                     this.navigatePage(pager, page, {returnPage: true})
-                                        .then((el) => {
+                                        .then(el => {
                                             if (el) {
                                                 w();
                                             } else {
@@ -527,14 +527,14 @@ class Sippol extends WebRobot {
                             }
                         }
                         // handler to finish each iteration
-                        const finishEach = (next) => {
+                        const finishEach = next => {
                             if (typeof done == 'function') {
                                 done()
-                                    .then((res) => {
+                                    .then(res => {
                                         retval = res;
                                         next();
                                     })
-                                    .catch((err) => {
+                                    .catch(err => {
                                         if (err instanceof Error) throw err;
                                     })
                                 ;
@@ -546,7 +546,7 @@ class Sippol extends WebRobot {
                         const doit = (elements, next = true) => {
                             // check if elements exists
                             if (elements.length) {
-                                const q = new Queue(elements, (el) => {
+                                const q = new Queue(elements, el => {
                                     const f = () => {
                                         const items = works(el);
                                         if (options.click) items.push(() => el.click());
@@ -555,7 +555,7 @@ class Sippol extends WebRobot {
                                             .then(() => {
                                                 finishEach(() => q.next());
                                             })
-                                            .catch((err) => {
+                                            .catch(err => {
                                                 // is iteration stopped?
                                                 if (err instanceof SippolStopError) {
                                                     next = false;
@@ -567,7 +567,7 @@ class Sippol extends WebRobot {
                                         ;
                                     }
                                     if (options.visible) {
-                                        el.isDisplayed().then((visible) => {
+                                        el.isDisplayed().then(visible => {
                                             if (visible) {
                                                 f();
                                             } else {
@@ -591,19 +591,19 @@ class Sippol extends WebRobot {
                         // apply filter
                         if (typeof filter == 'function') {
                             filter(elements)
-                                .then((items) => doit(items, false))
-                                .catch((err) => reject(err))
+                                .then(items => doit(items, false))
+                                .catch(err => reject(err))
                             ;
                         } else {
                             doit(elements);
                         }
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             }
             if (pager) {
                 this.getPages(pager, options.direction)
-                    .then((result) => {
+                    .then(result => {
                         pages = result;
                         page = options.direction > 0 ? 1 : pages;
                         w();
@@ -620,7 +620,7 @@ class Sippol extends WebRobot {
         return this.each({
             check: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]/td[1]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
-            works: (el) => work(el),
+            works: el => work(el),
             done: done,
             filter: filter,
             direction: direction
@@ -630,16 +630,16 @@ class Sippol extends WebRobot {
     locateData(id) {
         let match;
         return this.eachData(
-            (el) => {
+            el => {
                 match = el;
                 return [];
             },
             () => Promise.resolve(match),
             (elements) => new Promise((resolve, reject) => {
                 const matched = [];
-                const q = new Queue(elements, (el) => {
+                const q = new Queue(elements, el => {
                     this.retrDataIdFromRow(el)
-                        .then((xid) => {
+                        .then(xid => {
                             if (id == xid) {
                                 matched.push(el);
                                 q.done();
@@ -662,16 +662,16 @@ class Sippol extends WebRobot {
         const items = [];
         const w = this.fetchDataWorks(options);
         w.push(() => this.eachData(
-            (el) => {
+            el => {
                 const data = new SippolData();
                 const works = this.fetchDataEachWorks(el, options);
                 works.push(() => new Promise((resolve, reject) => {
                     this.retrData(el, data, options.useForm)
-                        .then((okay) => {
+                        .then(okay => {
                             if (okay) items.push(data);
                             resolve();
                         })
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 }));
                 return works;
@@ -684,7 +684,7 @@ class Sippol extends WebRobot {
     fetchDataWorks(options) {
         const works = [];
         const filters = {spp: this.DATA_SPP, spm: this.DATA_SPM, sp2d: this.DATA_SP2D};
-        Object.keys(filters).forEach((key) => {
+        Object.keys(filters).forEach(key => {
             if (options[key] instanceof Date) {
                 works.push(() => this.sortData(filters[key], this.SORT_DESCENDING));
             }
@@ -695,11 +695,11 @@ class Sippol extends WebRobot {
     fetchDataEachWorks(el, options) {
         const works = [];
         const filters = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
-        Object.keys(filters).forEach((key) => {
+        Object.keys(filters).forEach(key => {
             if (options[key] instanceof Date) {
                 works.push(() => new Promise((resolve, reject) => {
                     this.fetchDataEachMatch(el, filters[key], options[key])
-                        .then((okay) => {
+                        .then(okay => {
                             if (!okay) {
                                 reject(new SippolStopError());
                             } else {
@@ -717,13 +717,13 @@ class Sippol extends WebRobot {
         return new Promise((resolve, reject) => {
             let okay = true;
             el.findElement(By.xpath('./..//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))
-                .then((xel) => {
+                .then(xel => {
                     xel.isDisplayed()
-                        .then((visible) => {
+                        .then(visible => {
                             okay = visible;
                             if (okay) {
                                 xel.getText()
-                                    .then((value) => {
+                                    .then(value => {
                                         const s = value.split(',');
                                         const dt = this.pickDate(s[1], true);
                                         okay = dt >= since;
@@ -744,25 +744,25 @@ class Sippol extends WebRobot {
     retrData(el, data, useForm) {
         return new Promise((resolve, reject) => {
             this.retrDataStatusFromRow(el)
-                .then((okay) => {
+                .then(okay => {
                     // process only not cancelled data
                     if (okay) {
                         if (useForm) {
                             this.retrDataFromForm(el, data)
                                 .then(() => resolve(true))
-                                .catch((err) => reject(err))
+                                .catch(err => reject(err))
                             ;
                         } else {
                             this.retrDataFromRow(el, data)
                                 .then(() => resolve(true))
-                                .catch((err) => reject(err))
+                                .catch(err => reject(err))
                             ;
                         }
                     } else {
                         resolve(false);
                     }
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -777,15 +777,15 @@ class Sippol extends WebRobot {
     getValuesFromSppForm(data) {
         return new Promise((resolve, reject) => {
             this.waitFor(By.xpath('//form[@name="editForm"]'))
-                .then((form) => {
+                .then(form => {
                     Work.works([
                         () => new Promise((resolve, reject) => {
                             this.getText([By.id('mySppLabel')], form)
-                                .then((result) => {
+                                .then(result => {
                                     data.Id = this.pickPid(result[0]);
                                     resolve();
                                 })
-                                .catch((err) => reject(err))
+                                .catch(err => reject(err))
                             ;
                         }),
                         () => new Promise((resolve, reject) => {
@@ -793,7 +793,7 @@ class Sippol extends WebRobot {
                                 'penerima', 'alamat', 'npwp', 'kode', 'noKontrak', 'tglKontrak', 'bank', 'bankCab', 'bankRek',
                                 'afektasi', 'untuk', 'ket'
                             ])
-                                .then((values) => {
+                                .then(values => {
                                     data.Kode = this.pickStr(values.kode);
                                     data.Penerima = this.pickStr(values.penerima);
                                     data.Alamat = this.pickStr(values.alamat);
@@ -814,14 +814,14 @@ class Sippol extends WebRobot {
                                     data.Nominal = this.pickFloat(values.afektasi);
                                     resolve();
                                 })
-                                .catch((err) => reject(err))
+                                .catch(err => reject(err))
                             ;
                         }),
                         () => new Promise((resolve, reject) => {
                             form.findElement(By.xpath('//div[@ng-show="vm.spp.pkId"]/span/span[text()="Batal"]'))
-                                .then((el) => {
+                                .then(el => {
                                     el.isDisplayed()
-                                        .then((visible) => {
+                                        .then(visible => {
                                             if (visible) {
                                                 data.Status = this.SPP_BATAL;
                                             } else {
@@ -849,10 +849,10 @@ class Sippol extends WebRobot {
                         () => this.click({el: form, data: By.xpath('//button[@class="close"]')})
                     ])
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -861,11 +861,11 @@ class Sippol extends WebRobot {
         return Work.works([
             () => new Promise((resolve, reject) => {
                 this.retrDataIdFromRow(el)
-                    .then((id) => {
+                    .then(id => {
                         data.Id = id;
                         resolve();
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             }),
             () => new Promise((resolve, reject) => {
@@ -875,7 +875,7 @@ class Sippol extends WebRobot {
                     By.xpath('./../td[5]/span[1]/strong'),  By.xpath('./../td[5]/span[2]'), // SP2D
                     By.xpath('./../td[7]/strong'),                                          // Nominal
                 ], el)
-                    .then((result) => {
+                    .then(result => {
                         data.SPPNomor = this.pickNumber(result[0]);
                         data.SPPTanggal = this.pickDate(result[1]);
                         data.SPMNomor = this.pickNumber(result[2]);
@@ -885,7 +885,7 @@ class Sippol extends WebRobot {
                         data.Nominal = this.pickFloat(result[6]);
                         resolve();
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             })
         ]);
@@ -894,14 +894,14 @@ class Sippol extends WebRobot {
     retrDataIdFromRow(el) {
         return new Promise((resolve, reject) => {
             el.findElement(By.xpath('./../td[2]'))
-                .then((xel) => {
+                .then(xel => {
                     xel.getAttribute('title')
-                        .then((title) => {
+                        .then(title => {
                             resolve(this.pickPid(title));
                         })
                     ;
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -909,14 +909,14 @@ class Sippol extends WebRobot {
     retrDataStatusFromRow(el) {
         return new Promise((resolve, reject) => {
             el.findElement(By.xpath('./../td[3]/span[@ng-show="spp.pkSppFlag!=0"]'))
-                .then((xel) => {
+                .then(xel => {
                     xel.getAttribute('class')
-                        .then((xclass) => {
+                        .then(xclass => {
                             resolve(xclass.indexOf('glyphicon-remove') < 0);
                         })
                     ;
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -932,7 +932,7 @@ class Sippol extends WebRobot {
     updateSpp(id, data) {
         return new Promise((resolve, reject) => {
             this.locateData(id)
-                .then((el) => {
+                .then(el => {
                     if (el) {
                         Work.works([
                             () => this.clickEditSppButton(el),
@@ -940,7 +940,7 @@ class Sippol extends WebRobot {
                             () => this.fillSppForm(data),
                         ])
                             .then(() => resolve())
-                            .catch((err) => reject(err))
+                            .catch(err => reject(err))
                         ;
                     } else {
                         reject('SPP with id ' + id + ' not found!');
@@ -960,16 +960,16 @@ class Sippol extends WebRobot {
         return Work.works([
             () => new Promise((resolve, reject) => {
                 el.findElement(By.xpath('./..'))
-                    .then((xel) => {
+                    .then(xel => {
                         rel = xel;
                         resolve();
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             }),
             () => new Promise((resolve, reject) => {
                 rel.getAttribute('class')
-                    .then((xclass) => {
+                    .then(xclass => {
                         if (xclass == 'info') needClick = false;
                         resolve();
                     })
@@ -979,7 +979,7 @@ class Sippol extends WebRobot {
                 if (needClick) {
                     el.click()
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 } else {
                     resolve();
@@ -1001,7 +1001,7 @@ class Sippol extends WebRobot {
                 // process only once
                 w.push(() => new Promise((resolve, reject) => {
                     this.getDriver().findElements(By.xpath('//tr[@ng-repeat="trsRek in vm.trsReks track by trsRek.id"]'))
-                        .then((elements) => {
+                        .then(elements => {
                             if (!elements.length) {
                                 Work.works([
                                     () => this.waitAndClick(By.xpath('//button[@ng-click="vm.trsRekAdd()"]')),
@@ -1010,7 +1010,7 @@ class Sippol extends WebRobot {
                                     ),
                                 ])
                                     .then(() => resolve())
-                                    .catch((err) => reject(err))
+                                    .catch(err => reject(err))
                                 ;
                             } else {
                                 resolve();
@@ -1040,8 +1040,8 @@ class Sippol extends WebRobot {
         for (let key in maps) {
             let mapping = {};
             let identifier = key;
-            if (key.substr(0, 1) == '#') {
-                identifier = key.substr(1);
+            if (key.substring(0, 1) == '#') {
+                identifier = key.substring(1);
                 mapping.target = By.id(identifier);
             } else {
                 mapping.target = By.name(key);
@@ -1054,7 +1054,7 @@ class Sippol extends WebRobot {
             if (identifier.indexOf('tgl') == 0 && typeof value == 'string') {
                 let p = value.indexOf(' ');
                 if (p > 0) {
-                    value = value.substr(0, p);
+                    value = value.substring(0, p);
                 }
             }
             // handle rek bank
@@ -1079,14 +1079,14 @@ class Sippol extends WebRobot {
                         () => this.sleep(),
                         () => new Promise((resolve, reject) => {
                             this.getDriver().findElements(By.xpath('//div[@class="angucomplete-row"]'))
-                                .then((elements) => {
+                                .then(elements => {
                                     const q = new Queue(elements, (el) => {
                                         el.getText()
                                             .then((result) => {
                                                 if (result.indexOf(data.value) >= 0) {
                                                     el.click()
                                                         .then(() => resolve())
-                                                        .catch((err) => reject(err))
+                                                        .catch(err => reject(err))
                                                     ;
                                                 } else {
                                                     q.next();
@@ -1096,12 +1096,12 @@ class Sippol extends WebRobot {
                                     });
                                     q.once('done', () => reject('No match for ' + data.value));
                                 })
-                                .catch((err) => reject(err))
+                                .catch(err => reject(err))
                             ;
                         })
                     ])
                         .then(() => next())
-                        .catch((err) => {
+                        .catch(err => {
                             // retry once more
                             if (!data.retry) {
                                 data.retry = true;
@@ -1123,7 +1123,7 @@ class Sippol extends WebRobot {
         return Work.works([
             () => new Promise((resolve, reject) => {
                 this.locateData(id)
-                    .then((xel) => {
+                    .then(xel => {
                         if (xel) {
                             el = xel;
                             resolve();
@@ -1136,12 +1136,12 @@ class Sippol extends WebRobot {
             () => new Promise((resolve, reject) => {
                 this.click({el: el, data: By.xpath('../td[6]/span/span[@ng-show="spp.syaratId"]')})
                     .then(() => resolve())
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             }),
             () => new Promise((resolve, reject) => {
                 this.getDriver().findElements(By.xpath('//ul/li[@ng-repeat="dok in spp.doks"]'))
-                    .then((xelements) => {
+                    .then(xelements => {
                         if (xelements.length) {
                             elements = xelements;
                             resolve();
@@ -1153,13 +1153,13 @@ class Sippol extends WebRobot {
             }),
             () => new Promise((resolve, reject) => {
                 let idx = -1;
-                const q = new Queue(elements, (el) => {
+                const q = new Queue(elements, el => {
                     idx++;
                     let xel, title, visible;
                     Work.works([
                         () => new Promise((resolve, reject) => {
                             el.getText()
-                                .then((text) => {
+                                .then(text => {
                                     title = text;
                                     resolve();
                                 })
@@ -1167,16 +1167,16 @@ class Sippol extends WebRobot {
                         }),
                         () => new Promise((resolve, reject) => {
                             el.findElement(By.xpath('./span[contains(@class,"glyphicon-download")]'))
-                                .then((d) => {
+                                .then(d => {
                                     xel = d;
                                     resolve();
                                 })
-                                .catch((err) => reject(err))
+                                .catch(err => reject(err))
                             ;
                         }),
                         () => new Promise((resolve, reject) => {
                             xel.isDisplayed()
-                                .then((xvisible) => {
+                                .then(xvisible => {
                                     visible = xvisible;
                                     resolve();
                                 })
@@ -1194,7 +1194,7 @@ class Sippol extends WebRobot {
                             }
                             if (docs[doctype] && fs.existsSync(docs[doctype])) {
                                 this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))
-                                    .then((files) => {
+                                    .then(files => {
                                         if (idx < files.length) {
                                             console.log('Uploading document %s', docs[doctype]);
                                             files[idx].sendKeys(docs[doctype])
@@ -1203,7 +1203,7 @@ class Sippol extends WebRobot {
                                                     // wait for upload to complete
                                                     const waitUpload = () => {
                                                         xel.isDisplayed()
-                                                            .then((visible) => {
+                                                            .then(visible => {
                                                                 if (visible) {
                                                                     if (!result.updated) result.updated = [];
                                                                     result.updated.push(doctype);
@@ -1223,7 +1223,7 @@ class Sippol extends WebRobot {
                                                     }
                                                     waitUpload();
                                                 })
-                                                .catch((err) => reject(err))
+                                                .catch(err => reject(err))
                                             ;
                                         } else {
                                             resolve();
@@ -1258,8 +1258,4 @@ class SippolData {
 class SippolStopError extends Error {
 }
 
-module.exports = {
-    Sippol: Sippol,
-    SippolData: SippolData,
-    SippolStopError: SippolStopError
-};
+module.exports = { Sippol, SippolData, SippolStopError };

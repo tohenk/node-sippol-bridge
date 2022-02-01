@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Toha <tohenk@yahoo.com>
+ * Copyright (c) 2020-2022 Toha <tohenk@yahoo.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -22,57 +22,17 @@
  * SOFTWARE.
  */
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const util = require('util');
-const EventEmitter = require('events');
 const Work = require('@ntlab/ntlib/work');
 const Queue = require('@ntlab/ntlib/queue');
 const { Sippol } = require('./sippol');
+const SippolQueue = require('./queue');
 
-class SippolBridge extends EventEmitter {
-
-    VERSION = 'SIPPOL-BRIDGE-1.0'
-
-    time = null
+class SippolBridge {
 
     constructor(options) {
-        super();
-        this.time = new Date();
         this.sippol = new Sippol(this.getOptions(options));
-        this.queues = [];
-        this.queue = new Queue([], (queue) => {
-            this.emit('queue', queue);
-            queue.setTime();
-            queue.setStatus(SippolQueue.STATUS_PROCESSING);
-            this.processQueue(queue)
-                .then((res) => {
-                    queue.setStatus(SippolQueue.STATUS_DONE);
-                    queue.setResult(res);
-                    this.setLastQueue(queue);
-                    if (typeof queue.resolve == 'function') {
-                        queue.resolve(res);
-                    }
-                    this.emit('queue-done', queue);
-                    this.queue.next();
-                })
-                .catch((err) => {
-                    queue.setStatus(SippolQueue.STATUS_ERROR);
-                    queue.setResult(err);
-                    this.setLastQueue(queue);
-                    if (typeof queue.reject == 'function') {
-                        queue.reject(err);
-                    }
-                    this.emit('queue-error', queue);
-                    this.queue.next();
-                })
-            ;
-        },
-        () => this.sippol.ready ? true : false);
-        this.sippol.onready = () => {
-            this.queue.next();
-        }
     }
 
     getOptions(options) {
@@ -88,68 +48,11 @@ class SippolBridge extends EventEmitter {
             this.maxNotifiedItems = options.maxNotifiedItems;
             delete options.maxNotifiedItems;
         }
+        if (options.accepts) {
+            this.accepts = options.accepts;
+            delete options.accepts;
+        }
         return options;
-    }
-
-    getStatus() {
-        const status = {
-            version: this.VERSION,
-            time: this.time.toString(),
-            total: this.queues.length,
-            queue: this.queue.queues.length,
-        }
-        if (this.queue.queue) {
-            status.current = this.queue.queue.getInfo();
-        }
-        if (this.xqueue) {
-            status.last = {};
-            status.last.name = this.xqueue.getInfo();
-            if (this.xqueue.time) {
-                status.last.time = this.xqueue.time.toString();
-            }
-            status.last.status = this.xqueue.getStatusText();
-            if (this.xqueue.result) {
-                status.last.result = util.inspect(this.xqueue.result);
-            }
-        }
-        return status;
-    }
-
-    setLastQueue(queue) {
-        if (queue.type != SippolQueue.QUEUE_CALLBACK) {
-            this.xqueue = queue;
-        }
-    }
-
-    processQueue(queue) {
-        switch (queue.type) {
-            case SippolQueue.QUEUE_SPP:
-                return this.createSpp(queue);
-            case SippolQueue.QUEUE_UPLOAD:
-                return this.uploadDocs(queue);
-            case SippolQueue.QUEUE_QUERY:
-                return this.query(queue);
-            case SippolQueue.QUEUE_LIST:
-                return this.listSpp(queue);
-            case SippolQueue.QUEUE_CALLBACK:
-                return this.notify(queue);
-        }
-    }
-
-    genId() {
-        const shasum = crypto.createHash('sha1');
-        shasum.update(new Date().getTime().toString());
-        return shasum.digest('hex').substr(0, 8);
-    }
-
-    addQueue(queue) {
-        if (!queue.id) {
-            queue.setId(this.genId());
-            queue.maps = this.sippol.maps;
-        }
-        this.queues.push(queue);
-        this.queue.requeue([queue]);
-        return {status: 'queued', id: queue.id};
     }
 
     filterItems(items, filter) {
@@ -178,14 +81,18 @@ class SippolBridge extends EventEmitter {
         return result;
     }
 
-    sleep(ms) {
-        return this.sippol.sleep(ms);
+    selfTest() {
+        return this.do(() => this.waitUntilReady());
     }
 
     isReady() {
+        return this.sippol.ready;
+    }
+
+    waitUntilReady() {
         return new Promise((resolve, reject) => {
             const f = () => {
-                if (this.sippol.ready) {
+                if (this.isReady()) {
                     resolve();
                 } else {
                     setTimeout(f, 100);
@@ -193,6 +100,10 @@ class SippolBridge extends EventEmitter {
             }
             f();
         });
+    }
+
+    sleep(ms) {
+        return this.sippol.sleep(ms);
     }
 
     do(works) {
@@ -216,11 +127,11 @@ class SippolBridge extends EventEmitter {
                 ;
             }
             Work.works(w)
-                .then((res) => {
+                .then(res => {
                     result = res;
                     done();
                 })
-                .catch((err) => {
+                .catch(err => {
                     if (err) console.error(err);
                     done();
                 })
@@ -228,17 +139,11 @@ class SippolBridge extends EventEmitter {
         });
     }
 
-    selfTest() {
-        return this.do(() => Promise.resolve());
-    }
-
     fetch(options) {
         return new Promise((resolve, reject) => {
             this.sippol.fetchData(options)
-                .then((items) => {
-                    resolve(items);
-                })
-                .catch((err) => reject(err))
+                .then(items => resolve(items))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -265,67 +170,21 @@ class SippolBridge extends EventEmitter {
                 maxNotifiedItems : parts.length;
             let part = parts.splice(0, n);
             const callbackQueue = SippolQueue.createCallbackQueue({items: part}, callback);
-            this.addQueue(callbackQueue);
+            SippolQueue.addQueue(callbackQueue);
         }
-    }
-
-    notifyCallback(url, data) {
-        return new Promise((resolve, reject) => {
-            // https://nodejs.org/dist/latest-v14.x/docs/api/http.html#http_http_request_options_callback
-            let buff, result, err;
-            const parsedUrl = require('url').parse(url);
-            const http = require('https:' == parsedUrl.protocol ? 'https' : 'http');
-            const payload = JSON.stringify(data);
-            const options = {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(payload)
-                }
-            }
-            const req = http.request(url, options, (res) => {
-                res.setEncoding('utf8');
-                res.on('data', (chunk) => {
-                    if (buff) {
-                        buff += chunk;
-                    } else {
-                        buff = chunk;
-                    }
-                });
-                res.on('end', () => {
-                    result = buff;
-                });
-            });
-            req.on('error', (e) => {
-                err = e;
-            });
-            req.on('close', () => {
-                if (result) {
-                    resolve(util.format('%s', result));
-                } else {
-                    reject(err);
-                }
-            });
-            req.write(payload);
-            req.end();
-        });
-    }
-
-    notify(queue) {
-        return this.notifyCallback(queue.callback, queue.data);
     }
 
     query(queue) {
         return this.do(() => new Promise((resolve, reject) => {
             this.getPenerima(queue.data.term)
-                .then((items) => {
+                .then(items => {
                     const matches = this.filterItems(items);
                     if (matches.length && queue.callback && queue.data.notify) {
                         this.notifyItems(matches, queue.callback);
                     }
                     resolve(matches);
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         }));
     }
@@ -333,14 +192,14 @@ class SippolBridge extends EventEmitter {
     listSpp(queue) {
         return new Promise((resolve, reject) => {
             this.list(queue.data)
-                .then((items) => {
+                .then(items => {
                     const matches = this.filterItems(items, {year: queue.data.year});
                     if (matches.length && queue.callback) {
                         this.notifyItems(matches, queue.callback);
                     }
                     resolve(matches);
                 })
-                .catch((err) => reject(err))
+                .catch(err => reject(err))
             ;
         });
     }
@@ -353,7 +212,7 @@ class SippolBridge extends EventEmitter {
         return this.do([
             () => new Promise((resolve, reject) => {
                 this.getPenerima(penerima)
-                    .then((items) => {
+                    .then(items => {
                         matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
                         if (matches.length) {
                             if (queue.callback) {
@@ -372,7 +231,7 @@ class SippolBridge extends EventEmitter {
                                     spp: matches[idx],
                                     ref: queue.data[this.datakey] ? queue.data[this.datakey] : null
                                 }, queue.callback);
-                                this.addQueue(callbackQueue);
+                                SippolQueue.addQueue(callbackQueue);
                             }
                             return reject('SPP for ' + penerima + ' has been created!');
                         }
@@ -383,33 +242,33 @@ class SippolBridge extends EventEmitter {
                         }
                         resolve();
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             }),
             () => new Promise((resolve, reject) => {
                 if (!id) {
                     this.sippol.createSpp(queue.data)
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 } else {
                     this.sippol.updateSpp(id, queue.data)
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 }
             }),
             () => new Promise((resolve, reject) => {
                 this.getPenerima(penerima)
-                    .then((items) => {
+                    .then(items => {
                         matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
                         if (matches.length && queue.callback) {
                             const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
-                            this.addQueue(callbackQueue);
+                            SippolQueue.addQueue(callbackQueue);
                         }
                         resolve(items);
                     })
-                    .catch((err) => reject(err))
+                    .catch(err => reject(err))
                 ;
             }),
         ]);
@@ -457,7 +316,7 @@ class SippolBridge extends EventEmitter {
                 const merge = require('easy-pdf-merge');
                 const q = new Queue(Object.keys(mergedocs), (docgroup) => {
                     const docfilename = docfname(docgroup.toLowerCase());
-                    merge(mergedocs[docgroup], docfilename, (err) => {
+                    merge(mergedocs[docgroup], docfilename, err => {
                         if (err) {
                             console.error(err);
                         } else {
@@ -478,7 +337,7 @@ class SippolBridge extends EventEmitter {
                 .catch(() => {
                     this.sippol.resetFilter()
                         .then(() => resolve())
-                        .catch((err) => reject(err))
+                        .catch(err => reject(err))
                     ;
                 })
             ;
@@ -486,15 +345,15 @@ class SippolBridge extends EventEmitter {
         // upload docs
         w.push(() => new Promise((resolve, reject) => {
             this.sippol.uploadDocs(queue.data.Id, docs)
-                .then((res) => {
+                .then(res => {
                     result = res;
                     if (res && queue.callback) {
                         const callbackQueue = SippolQueue.createCallbackQueue({Id: queue.data.Id, docs: res}, queue.callback);
-                        this.addQueue(callbackQueue);
+                        SippolQueue.addQueue(callbackQueue);
                     }
                     resolve();
                 })
-                .catch((err) => {
+                .catch(err => {
                     result = err;
                     resolve();
                 })
@@ -520,7 +379,7 @@ class SippolBridge extends EventEmitter {
     saveDoc(filename, data) {
         return new Promise((resolve, reject) => {
             if (Buffer.isBuffer(data)) {
-                fs.writeFile(filename, new Uint8Array(data), (err) => {
+                fs.writeFile(filename, new Uint8Array(data), err => {
                     if (err) return reject(err);
                     resolve(filename);
                 });
@@ -531,150 +390,4 @@ class SippolBridge extends EventEmitter {
     }
 }
 
-class SippolQueue
-{
-    constructor() {
-        this.status = SippolQueue.STATUS_NEW;
-    }
-
-    setType(type) {
-        this.type = type;
-    }
-
-    setId(id) {
-        this.id = id;
-    }
-
-    setData(data) {
-        this.data = data;
-    }
-
-    setCallback(callback) {
-        this.callback = callback;
-    }
-
-    setStatus(status) {
-        if (this.status != status) {
-            this.status = status;
-            console.log('Queue %s %s', this.getInfo(), this.getStatusText());
-        }
-    }
-
-    setResult(result) {
-        if (this.result != result) {
-            this.result = result;
-            console.log('Queue %s result: %s', this.getInfo(), this.result);
-        }
-    }
-
-    setTime(time) {
-        if (time == null || time == undefined) {
-            time = new Date();
-        }
-        this.time = time;
-    }
-
-    getTextFromId(id, values) {
-        return Object.keys(values)[Object.values(values).indexOf(id)];
-    }
-
-    getTypeText() {
-        if (!this.types) {
-            this.types = Object.freeze({
-                'spp': SippolQueue.QUEUE_SPP,
-                'upload': SippolQueue.QUEUE_UPLOAD,
-                'query': SippolQueue.QUEUE_QUERY,
-                'list': SippolQueue.QUEUE_LIST,
-                'callback': SippolQueue.QUEUE_CALLBACK,
-            });
-        }
-        return this.getTextFromId(this.type, this.types);
-    }
-
-    getStatusText() {
-        if (!this.statuses) {
-            this.statuses = Object.freeze({
-                'new': SippolQueue.STATUS_NEW,
-                'processing': SippolQueue.STATUS_PROCESSING,
-                'done': SippolQueue.STATUS_DONE,
-                'error': SippolQueue.STATUS_ERROR,
-            });
-        }
-        return this.getTextFromId(this.status, this.statuses);
-    }
-
-    getMappedData(name) {
-        if (this.maps && typeof name == 'string') {
-            let o = this.maps;
-            let parts = name.split('.');
-            while (parts.length) {
-                let n = parts.shift();
-                if (n.substr(0, 1) == '#') n = n.substr(1);
-                if (o[n]) {
-                    o = o[n];
-                } else {
-                    o = null;
-                    break;
-                }
-            }
-            if (typeof o == 'string' && this.data[o]) {
-                return this.data[o];
-            }
-        }
-    }
-
-    getInfo() {
-        let info = this.info;
-        if (!info && this.type == SippolQueue.QUEUE_CALLBACK) {
-            info = this.callback;
-        }
-        return info ? util.format('%s:%s (%s)', this.getTypeText(), this.id, info) :
-            util.format('%s:%s', this.getTypeText(), this.id);
-    }
-
-    static create(type, data, callback = null) {
-        const queue = new this();
-        queue.setType(type);
-        queue.setData(data);
-        if (callback) {
-            queue.callback = callback;
-        }
-        return queue;
-    }
-
-    static createSppQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_SPP, data, callback);
-    }
-
-    static createUploadQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_UPLOAD, data, callback);
-    }
-
-    static createQueryQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_QUERY, data, callback);
-    }
-
-    static createListQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_LIST, data, callback);
-    }
-
-    static createCallbackQueue(data, callback = null) {
-        return this.create(SippolQueue.QUEUE_CALLBACK, data, callback);
-    }
-
-    static get QUEUE_SPP() { return 1 }
-    static get QUEUE_UPLOAD() { return 2 }
-    static get QUEUE_QUERY() { return 3 }
-    static get QUEUE_LIST() { return 4 }
-    static get QUEUE_CALLBACK() { return 5 }
-
-    static get STATUS_NEW() { return 1 }
-    static get STATUS_PROCESSING() { return 2 }
-    static get STATUS_DONE() { return 3 }
-    static get STATUS_ERROR() { return 4 }
-}
-
-module.exports = {
-    SippolBridge: SippolBridge,
-    SippolQueue: SippolQueue
-}
+module.exports = SippolBridge;
