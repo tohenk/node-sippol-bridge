@@ -87,29 +87,27 @@ class SippolDequeue extends EventEmitter {
                 this.queue.next();
             }
             const f = () => {
-                process.nextTick(() => {
-                    // check for timeout
-                    let queue = this.getCurrent();
-                    if (queue && queue.status == SippolQueue.STATUS_PROCESSING) {
-                        const t = new Date().getTime();
-                        const d = t - queue.time.getTime();
-                        const timeout = queue.data && queue.data.timeout != undefined ?
-                            queue.data.timeout : this.timeout;
-                        if (timeout > 0 && d > timeout) {
-                            queue.setStatus(SippolQueue.STATUS_TIMED_OUT);
-                            this.queue.next();
-                        }
+                // check for timeout
+                let queue = this.getCurrent();
+                if (queue && queue.status == SippolQueue.STATUS_PROCESSING) {
+                    const t = new Date().getTime();
+                    const d = t - queue.time.getTime();
+                    const timeout = queue.data && queue.data.timeout != undefined ?
+                        queue.data.timeout : this.timeout;
+                    if (timeout > 0 && d > timeout) {
+                        queue.setStatus(SippolQueue.STATUS_TIMED_OUT);
+                        this.queue.next();
                     }
-                    // check for next queue
-                    queue = this.getNext();
-                    if (queue) {
-                        if (this.consumer.canHandleNext(queue)) {
-                            this.queue.next();
-                        }
+                }
+                // check for next queue
+                queue = this.getNext();
+                if (queue) {
+                    if (this.consumer.canHandleNext(queue)) {
+                        this.queue.next();
                     }
-                    // run on next tick again
-                    f();
-                });
+                }
+                // run on next
+                setTimeout(f, 1000);
             }
             f();
         }
