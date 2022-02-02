@@ -140,15 +140,17 @@ class App {
     }
 
     createServer() {
+        const { createServer } = require('http');
+        const http = createServer();
         const port = Cmd.get('port') | 3000;
-        const http = require('http').createServer();
         const opts = {};
         if (this.config.cors) {
             opts.cors = this.config.cors;
         } else {
             opts.cors = {origin: '*'};
         }
-        const io = require('socket.io')(http, opts);
+        const { Server } = require('socket.io');
+        const io = new Server(http, opts);
         io.of('/sippol')
             .on('connection', socket => {
                 this.handleConnection(socket);
@@ -165,6 +167,7 @@ class App {
                     this.dequeue.setConsumer(this);
                     console.log('Queue processing is ready...');
                 })
+                .catch(err => console.log(err))
             ;
         });
     }
