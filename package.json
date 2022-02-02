@@ -8,9 +8,9 @@
   "dependencies": {
     "@ntlab/ntlib": "^1.0.1",
     "@ntlab/webrobot": "^1.0.1",
-    "bufferutil": "^4.0.3",
+    "bufferutil": "^4.0.6",
     "easy-pdf-merge": "^0.2.6",
-    "socket.io": "^4.1.2",
-    "utf-8-validate": "^5.0.5"
+    "socket.io": "^4.4.1",
+    "utf-8-validate": "^5.0.8"
   }
 }
