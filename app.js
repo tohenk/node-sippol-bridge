@@ -232,7 +232,7 @@ class App {
                     let parts = [];
                     let partComplete = false;
                     Object.keys(data).forEach(k => {
-                        if (['Id', 'info', 'term', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
+                        if (['Id', 'info', 'term', 'year', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
                             let buff = Buffer.from(data[k], 'base64');
                             if (this.uploads[data.Id][k] != undefined) {
                                 buff = Buffer.concat([this.uploads[data.Id][k], buff]);
