@@ -160,7 +160,7 @@ class SippolDequeue extends EventEmitter {
             queue: this.queue.queues.length,
         });
         let queue = this.getCurrent();
-        if (queue) {
+        if (queue && queue.status == SippolQueue.STATUS_PROCESSING) {
             status.current = queue.getInfo();
         }
         queue = this.getLast();
