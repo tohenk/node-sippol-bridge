@@ -199,10 +199,10 @@ class App {
             })
             .on('spp', data => {
                 const queue = SippolQueue.createSppQueue(data, socket.callback);
-                const res = SippolQueue.addQueue(queue);
-                queue.maps = this.configs.maps;
+                queue.maps = this.config.maps;
                 queue.info = queue.getMappedData('penerima.penerima');
                 console.log('SPP: %s %s', data[this.config.datakey], queue.info ? queue.info : '');
+                const res = SippolQueue.addQueue(queue);
                 socket.emit('spp', res);
             })
             .on('upload', data => {
