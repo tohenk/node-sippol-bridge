@@ -164,11 +164,14 @@ class SippolBridge {
 
     notifyItems(items, callback) {
         let maxNotifiedItems = this.maxNotifiedItems || 500;
-        let parts = items;
-        while (parts.length) {
-            let n = maxNotifiedItems > 0 && parts.length > maxNotifiedItems ?
-                maxNotifiedItems : parts.length;
-            let part = parts.splice(0, n);
+        let count = items.length;
+        let pos = 0;
+        while (count) {
+            let n = maxNotifiedItems > 0 && count > maxNotifiedItems ?
+                maxNotifiedItems : count;
+            let part = items.slice(pos, n);
+            count -= n;
+            pos += n;
             const callbackQueue = SippolQueue.createCallbackQueue({items: part}, callback);
             SippolQueue.addQueue(callbackQueue);
         }
