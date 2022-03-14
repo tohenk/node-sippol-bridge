@@ -44,13 +44,11 @@ class SippolDequeue extends EventEmitter {
 
     doQueue(queue) {
         if (this.consumer) {
-            queue.setTime();
-            queue.setStatus(SippolQueue.STATUS_PROCESSING);
+            queue.start();
             this.emit('queue', queue);
             this.consumer.processQueue(queue)
                 .then(res => {
-                    queue.setStatus(SippolQueue.STATUS_DONE);
-                    queue.setResult(res);
+                    queue.done(res);
                     this.setLastQueue(queue);
                     if (typeof queue.resolve == 'function') {
                         queue.resolve(res);
@@ -59,8 +57,7 @@ class SippolDequeue extends EventEmitter {
                     this.queue.next();
                 })
                 .catch(err => {
-                    queue.setStatus(SippolQueue.STATUS_ERROR);
-                    queue.setResult(err);
+                    queue.error(err);
                     this.setLastQueue(queue);
                     if (typeof queue.reject == 'function') {
                         queue.reject(err);
@@ -107,7 +104,7 @@ class SippolDequeue extends EventEmitter {
                     }
                 }
                 // run on next
-                setTimeout(f, 1000);
+                setTimeout(f, 100);
             }
             f();
         }
@@ -154,7 +151,7 @@ class SippolDequeue extends EventEmitter {
     }
 
     getStatus() {
-        const status = Object.assign(this.info, {
+        const status = Object.assign({}, this.info, {
             time: this.time.toString(),
             total: this.queues.length,
             queue: this.queue.queues.length,
@@ -257,6 +254,21 @@ class SippolQueue
         }
         return info ? util.format('%s:%s (%s)', this.getTypeText(), this.id, info) :
             util.format('%s:%s', this.getTypeText(), this.id);
+    }
+
+    start() {
+        this.setTime();
+        this.setStatus(SippolQueue.STATUS_PROCESSING);
+    }
+
+    done(result) {
+        this.setStatus(SippolQueue.STATUS_DONE);
+        this.setResult(result);
+    }
+
+    error(error) {
+        this.setStatus(SippolQueue.STATUS_ERROR);
+        this.setResult(error);
     }
 
     static create(type, data, callback = null) {
