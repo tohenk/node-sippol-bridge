@@ -304,7 +304,7 @@ class App {
                 socket.emit('list', res);
             })
             .on('download', data => {
-                const options = {year: data.year};
+                const options = {year: data.year, timeout: 0};
                 this.getDateForOptions(options, data);
                 const queue = SippolQueue.createDownloadQueue(options, socket.callback);
                 const res = SippolQueue.addQueue(queue);
