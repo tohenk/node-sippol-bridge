@@ -26,7 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const Cmd = require('@ntlab/ntlib/cmd');
-const Work = require('@ntlab/ntlib/work');
+const Work = require('@ntlab/work/work');
 const SippolBridge = require('./bridge');
 const SippolQueue = require('./queue');
 const SippolNotifier = require('./notifier');
@@ -71,6 +71,7 @@ class App {
         if (Cmd.get('username')) this.config.username = Cmd.get('username');
         if (Cmd.get('password')) this.config.password = Cmd.get('password');
         if (!this.config.workdir) this.config.workdir = __dirname;
+        if (!this.config.downloaddir) this.config.downloaddir = path.join(this.config.workdir, 'download');
 
         // load form maps
         filename = path.join(__dirname, 'maps.json');
@@ -160,7 +161,7 @@ class App {
             console.log('Application ready on port %s...', port);
             const selfTests = [];
             this.bridges.forEach(bridge => {
-                selfTests.push(() => bridge.selfTest());
+                selfTests.push(w => bridge.selfTest());
             });
             Work.works(selfTests)
                 .then(() => {
@@ -297,19 +298,30 @@ class App {
             })
             .on('list', data => {
                 const options = {year: data.year, timeout: 0};
-                ['spp', 'spm', 'sp2d'].forEach(key => {
-                    if (data[key] && (
-                        !isNaN(data[key]) || (typeof data[key] == 'string' && data[key].indexOf('T') > 0)
-                        )
-                    ) {
-                        options[key] = new Date(data[key]);
-                    }
-                });
+                this.getDateForOptions(options, data);
                 const queue = SippolQueue.createListQueue(options, socket.callback);
                 const res = SippolQueue.addQueue(queue);
                 socket.emit('list', res);
             })
+            .on('download', data => {
+                const options = {year: data.year};
+                this.getDateForOptions(options, data);
+                const queue = SippolQueue.createDownloadQueue(options, socket.callback);
+                const res = SippolQueue.addQueue(queue);
+                socket.emit('download', res);
+            })
         ;
+    }
+
+    getDateForOptions(options, data) {
+        ['spp', 'spm', 'sp2d'].forEach(key => {
+            if (data[key] && (
+                !isNaN(data[key]) || (typeof data[key] == 'string' && data[key].indexOf('T') > 0)
+                )
+            ) {
+                options[key] = new Date(data[key]);
+            }
+        });
     }
 
     handleNotify() {
@@ -393,6 +405,8 @@ class App {
                     return bridge.query(queue);
                 case SippolQueue.QUEUE_LIST:
                     return bridge.listSpp(queue);
+                case SippolQueue.QUEUE_DOWNLOAD:
+                    return bridge.downloadSpp(queue);
             }
         }
         return Promise.reject(util.format('No bridge can handle %s!', queue.getInfo()));

@@ -26,7 +26,7 @@
 const crypto = require('crypto');
 const util = require('util');
 const EventEmitter = require('events');
-const Queue = require('@ntlab/ntlib/queue');
+const Queue = require('@ntlab/work/queue');
 
 let dequeue;
 
@@ -297,6 +297,10 @@ class SippolQueue
         return this.create(SippolQueue.QUEUE_LIST, data, callback);
     }
 
+    static createDownloadQueue(data, callback = null) {
+        return this.create(SippolQueue.QUEUE_DOWNLOAD, data, callback);
+    }
+
     static createCallbackQueue(data, callback = null) {
         return this.create(SippolQueue.QUEUE_CALLBACK, data, callback);
     }
@@ -319,6 +323,7 @@ class SippolQueue
     static get QUEUE_UPLOAD() { return 'upload' }
     static get QUEUE_QUERY() { return 'query' }
     static get QUEUE_LIST() { return 'list' }
+    static get QUEUE_DOWNLOAD() { return 'download' }
     static get QUEUE_CALLBACK() { return 'callback' }
 
     static get STATUS_NEW() { return 'new' }

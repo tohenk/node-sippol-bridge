@@ -24,9 +24,10 @@
 
 const fs = require('fs');
 const { By, Key } = require('selenium-webdriver');
-const Queue = require('@ntlab/ntlib/queue');
-const Work = require('@ntlab/ntlib/work');
+const Queue = require('@ntlab/work/queue');
+const Work = require('@ntlab/work/work');
 const WebRobot = require('@ntlab/webrobot');
+const debug = require('debug')('sippol');
 
 class Sippol extends WebRobot {
 
@@ -43,6 +44,9 @@ class Sippol extends WebRobot {
 
     SORT_ASCENDING = 1
     SORT_DESCENDING = 2
+
+    FETCH_DATA = 1
+    FETCH_DOWNLOAD = 2
 
     MAIN_PATH = '#/keuda-spp';
 
@@ -140,6 +144,14 @@ class Sippol extends WebRobot {
         return value;
     }
 
+    fillZero(value, len) {
+        let res = parseInt(value).toString();
+        while (res.length < len) {
+            res = '0' + res;
+        }
+        return res;
+    }
+
     getDocType(doc) {
         for (let key in this.docs) {
             if (doc.indexOf(this.docs[key]) == 0) {
@@ -169,82 +181,53 @@ class Sippol extends WebRobot {
 
     start() {
         return Work.works([
-            () => this.open(),
-            () => this.sleep(),
-            () => this.login(),
-            () => this.isLoggedIn()
+            w => this.open(),
+            w => this.sleep(),
+            w => this.login(),
+            w => this.isLoggedIn(),
         ]);
     }
 
     stop() {
-        return new Promise((resolve, reject) => {
-            if (this.driver) {
-                try {
-                    this.getDriver().quit()
-                        .then(() => {
-                            this.driver = null;
-                            resolve();
-                        })
-                        .catch(err => {
-                            this.driver = null;
-                            reject(err);
-                        })
-                    ;
-                }
-                catch (err) {
-                    this.driver = null;
-                    reject(err);
-                }
-            } else {
-                resolve();
-            }
-        });
+        return Work.works([
+            [w => this.getDriver().quit(), w => this.driver],
+        ], {done: () => {
+            this.driver = null;
+        }});
     }
 
     login() {
-        return new Promise((resolve, reject) => {
-            this.isNeedLoggingIn()
-                .then(() => {
-                    Work.works([
-                        () => this.waitAndClick(By.xpath('//button[@ng-click="vm.login()"]')),
-                        () => this.fillInForm([
-                                    {target: By.id('username'), value: this.username},
-                                    {target: By.id('password'), value: this.password},
-                                    //{target: By.id('rememberMe'), value: false}
-                                ],
-                                By.xpath('//h4[@data-translate="login.title"]'),
-                                By.xpath('//button[@data-translate="login.form.button"]')
-                        ),
-                        () => this.sleep(this.wait)
-                    ])
-                        .then(() => resolve())
-                        .catch(err => reject(err))
-                    ;
-                })
-                .catch(() => resolve())
-            ;
-        });
+        return Work.works([
+            [w => this.isLoggedIn(true)],
+            [w => this.waitAndClick(By.xpath('//button[@ng-click="vm.login()"]')),
+                w => !w.getRes(0)],
+            [w => this.fillInForm([
+                        {target: By.id('username'), value: this.username},
+                        {target: By.id('password'), value: this.password},
+                        //{target: By.id('rememberMe'), value: false}
+                    ],
+                    By.xpath('//h4[@data-translate="login.title"]'),
+                    By.xpath('//button[@data-translate="login.form.button"]')
+                ),
+                w => !w.getRes(0)],
+            [w => this.sleep(this.wait),
+                w => !w.getRes(0)],
+        ]);
     }
 
-    isLoggedIn() {
+    isLoggedIn(retval) {
         return new Promise((resolve, reject) => {
             this.getDriver().getCurrentUrl()
                 .then(url => {
-                    if (url.indexOf(this.MAIN_PATH) > 0) {
+                    const loggedIn = url.indexOf(this.MAIN_PATH) > 0 ? true : false;
+                    if (retval) {
+                        resolve(loggedIn);
+                    } else if (loggedIn) {
                         resolve();
                     } else {
-                        reject('Not logged in!');
+                        reject();
                     }
                 })
-            ;
-        });
-    }
-
-    isNeedLoggingIn() {
-        return new Promise((resolve, reject) => {
-            this.isLoggedIn()
-                .then(() => reject())
-                .catch(() => resolve())
             ;
         });
     }
@@ -255,8 +238,8 @@ class Sippol extends WebRobot {
             return Promise.reject(new Error('Status of ' + status + ' is unknown!'));
         }
         return Work.works([
-            () => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[3]/button[@id="dir-button"]')),
-            () => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.dokStatus=\'_X_\'"]'.replace(/_X_/, status))),
+            w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[3]/button[@id="dir-button"]')),
+            w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.dokStatus=\'_X_\'"]'.replace(/_X_/, status))),
         ]);
     }
 
@@ -265,56 +248,35 @@ class Sippol extends WebRobot {
     }
 
     filterData(data, type = this.DATA_SPM) {
-        return new Promise((resolve, reject) => {
-            const m = this.dataKey(type);
-            if (!m) {
-                return reject('Invalid filter type: ' + type);
-            }
-            this.waitFor(By.xpath('//input[@ng-model="vm._X_"]'.replace(/_X_/, m)))
-                .then(el => {
-                    this.fillInput(el, null == data ? data : data + (type != this.DATA_PENERIMA ? Key.ENTER : ''))
-                        .then(() => {
-                            if (type == this.DATA_PENERIMA) {
-                                this.refreshData()
-                                    .then(() => resolve())
-                                    .catch(err => reject(err))
-                                ;
-                            } else {
-                                resolve();
-                            }
-                        })
-                    ;
-                })
-                .catch(err => reject(err))
-            ;
-        });
+        const m = this.dataKey(type);
+        if (!m) {
+            return Promise.reject('Invalid filter type: ' + type);
+        }
+        return Work.works([
+            [w => this.waitFor(By.xpath('//input[@ng-model="vm._X_"]'.replace(/_X_/, m)))],
+            [w => this.fillInput(w.getRes(0), null == data ? data : data + (type != this.DATA_PENERIMA ? Key.ENTER : ''))],
+            [w => this.refreshData(), w => type == this.DATA_PENERIMA]
+        ]);
     }
 
     resetFilter() {
         return Work.works([
-            () => this.filterData(null, this.DATA_SPP),
-            () => this.filterData(null, this.DATA_SPM),
-            () => this.filterData(null, this.DATA_SP2D),
-            () => this.filterData(null, this.DATA_PENERIMA),
+            w => this.filterData(null, this.DATA_SPP),
+            w => this.filterData(null, this.DATA_SPM),
+            w => this.filterData(null, this.DATA_SP2D),
+            w => this.filterData(null, this.DATA_PENERIMA),
         ]);
     }
 
     sortData(type, dir = this.SORT_ASCENDING) {
-        return new Promise((resolve, reject) => {
-            const m = this.dataKey(type);
-            if (!m) {
-                return reject('Invalid sort type: ' + type);
-            }
-            this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m)))
-                .then(el => {
-                    this.ensureSorted(el, dir)
-                        .then(() => resolve())
-                        .catch(err => reject(err))
-                    ;
-                })
-                .catch(err => reject(err))
-            ;
-        });
+        const m = this.dataKey(type);
+        if (!m) {
+            return Promise.reject('Invalid sort type: ' + type);
+        }
+        return Work.works([
+            w => this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m))),
+            w => this.ensureSorted(w.getRes(0), dir),
+        ]);
     }
 
     ensureSorted(el, dir) {
@@ -336,148 +298,93 @@ class Sippol extends WebRobot {
 
     isSorted(el, dir) {
         if (!el) return Promise.reject('No sort element');
-        return new Promise((resolve, reject) => {
-            el.getAttribute('class')
-                .then(xclass => {
-                    xclass = xclass.substr(xclass.indexOf(' ')).trim();
-                    let sorted;
-                    switch (dir) {
-                        case this.SORT_ASCENDING:
-                            sorted = xclass == 'glyphicon-sort-by-attribute';
-                            break;
-                        case this.SORT_DESCENDING:
-                            sorted = xclass == 'glyphicon-sort-by-attribute-alt';
-                            break;
-                    }
-                    if (!sorted) {
-                        el.click()
-                            .then(() => resolve(false))
-                            .catch(err => reject(err))
-                        ;
-                    } else {
-                        resolve(true);
-                    }
-                })
-            ;
-        })
+        return Work.works([
+            [w => el.getAttribute('class')],
+            [w => new Promise((resolve, reject) => {
+                let sorted;
+                let xclass = w.getRes(0);
+                xclass = xclass.substr(xclass.indexOf(' ')).trim();
+                switch (dir) {
+                    case this.SORT_ASCENDING:
+                        sorted = xclass == 'glyphicon-sort-by-attribute';
+                        break;
+                    case this.SORT_DESCENDING:
+                        sorted = xclass == 'glyphicon-sort-by-attribute-alt';
+                        break;
+                }
+                resolve(sorted);
+            })],
+            [w => el.click(), w => !w.getRes(1)],
+        ]);
     }
 
     findPager(pager) {
-        return new Promise((resolve, reject) => {
-            this.findElement(pager)
-                .then(el => {
-                    el.isDisplayed()
-                        .then(visible => {
-                            if (visible) {
-                                resolve(el);
-                            } else {
-                                resolve();
-                            }
-                        })
-                    ;
-                })
-                .catch(err => resolve())
-            ;
-        });
+        return Work.works([
+            w => this.findElement(pager),
+            w => w.getRes(0).isDisplayed(),
+            w => new Promise((resolve, reject) => {
+                if (w.getRes(1)) {
+                    resolve(w.getRes(0))
+                } else {
+                    reject();
+                }
+            }),
+        ], {alwaysResolved: true});
+    }
+
+    findPage(pager, page, options) {
+        const isPage = ['first', 'prev', 'next', 'last'].indexOf(page) < 0;
+        const xpath = isPage ? './/li[contains(@class,"pagination-page")]/a[text()="_PAGE_"]' :
+            './/li[contains(@class,"pagination-_PAGE_")]/a';
+        return Work.works([
+            // find desired navigation button
+            [w => pager.findElements(By.xpath(xpath.replace(/_PAGE_/, page)))],
+            // ensure navigation button is clickable
+            [w => w.getRes(0)[0].findElement(By.xpath('./..'))],
+            // check for disabled class
+            [w => w.getRes(1).getAttribute('class')],
+            // click it if it's not disabled
+            [w => w.getRes(0)[0].click(), w => w.getRes(2) && w.getRes(2).indexOf('disabled') < 0],
+            // wait
+            [w => this.sleep(), w => options.wait],
+            // done
+            [w => new Promise((resolve, reject) => {
+                // no result
+                if (w.getRes(0).length == 0) {
+                    resolve();
+                // return page
+                } else if (options.returnPage) {
+                    resolve(w.getRes(0)[0]);
+                // return pager
+                } else {
+                    resolve(pager);
+                }
+            })],
+        ]);
     }
 
     navigatePage(pager, page, options) {
-        return new Promise((resolve, reject) => {
-            options = options || {};
-            if (typeof options.wait == 'undefined') options.wait = true;
-            this.findPager(pager)
-                .then(xpager => {
-                    if (!xpager) return resolve();
-                    const isPage = ['first', 'prev', 'next', 'last'].indexOf(page) < 0;
-                    let needClick = isPage ? true : false;
-                    let xpage;
-                    const w = [
-                        // find desired navigation button
-                        () => new Promise((resolve, reject) => {
-                            const xpath = isPage ? './/li[contains(@class,"pagination-page")]/a[text()="_PAGE_"]' :
-                                './/li[contains(@class,"pagination-_PAGE_")]/a';
-                            xpager.findElements(By.xpath(xpath.replace(/_PAGE_/, page)))
-                                .then(elements => {
-                                    if (elements.length) {
-                                        xpage = elements[0];
-                                    }
-                                    resolve();
-                                })
-                            ;
-                        })
-                    ];
-                    if (!isPage) {
-                        // ensure navigation button is clickable
-                        w.push(() => new Promise((resolve, reject) => {
-                            if (!xpage) return resolve();
-                            xpage.findElement(By.xpath('./..'))
-                                .then(xel => {
-                                    xel.getAttribute('class')
-                                        .then(xclass => {
-                                            if (xclass.indexOf('disabled') < 0) {
-                                                needClick = true;
-                                            }
-                                            resolve();
-                                        })
-                                    ;
-                                })
-                            ;
-                        }));
-                    }
-                    // click it
-                    w.push(() => new Promise((resolve, reject) => {
-                        if (!needClick) return resolve();
-                        xpage.click()
-                            .then(() => resolve())
-                            .catch(err => reject(err))
-                        ;
-                    }));
-                    if (options.wait) {
-                        w.push(() => this.sleep());
-                    }
-                    Work.works(w)
-                        .then(() => resolve(options.returnPage ? xpage : xpager))
-                        .catch(() => resolve())
-                    ;
-                })
-            ;
-        });
+        options = options || {};
+        if (typeof options.wait == 'undefined') options.wait = true;
+        return Work.works([
+            [w => this.findPager(pager)],
+            [w => this.findPage(w.getRes(0), page, options), w => w.getRes(0)],
+        ]);
     }
 
     getPages(pager, dir) {
-        let pages = 1;
-        let xpager;
         return Work.works([
-            () => new Promise((resolve, reject) => {
-                this.navigatePage(pager, 'last')
-                    .then(result => {
-                        if (result) xpager = result;
-                        resolve();
-                    })
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                if (!xpager) return resolve();
-                xpager.findElements(By.xpath('.//li[contains(@class,"pagination-page")]'))
-                    .then(elements => {
-                        this.getText([By.xpath('.')], elements[elements.length - 1])
-                            .then(xpage => {
-                                pages = parseInt(xpage);
-                                resolve();
-                            })
-                        ;
-                    })
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                if (dir > 0) {
-                    this.navigatePage(pager, 'first')
-                        .then(() => resolve(pages))
-                    ;
-                } else {
-                    resolve(pages);
+            [w => this.navigatePage(pager, 'last')],
+            [w => w.getRes(0).findElements(By.xpath('.//li[contains(@class,"pagination-page")]')), w => w.getRes(0)],
+            [w => this.getText([By.xpath('.')], w.getRes(1)[w.getRes(1).length - 1]), w => w.getRes(0)],
+            [w => this.navigatePage(pager, 'first'), w => dir > 0],
+            [w => new Promise((resolve, reject) => {
+                let pages = 1;
+                if (w.getRes(2)) {
+                    pages = parseInt(w.getRes(2));
                 }
-            })
+                resolve(pages);
+            })],
         ]);
     }
 
@@ -495,34 +402,42 @@ class Sippol extends WebRobot {
             let retval;
             let page = 1;
             let pages = 1;
-            const w = () => {
-                this.getDriver().findElements(check)
-                    .then(elements => {
+            const run = () => {
+                Work.works([
+                    [w => this.getDriver().findElements(check)],
+                    [w => new Promise((resolve, reject) => {
                         // handler to go to next page or resolve when no more pages
                         const nextPageOrResolve = (next = true) => {
                             if (next && pager) {
                                 page += options.direction;
+                                debug('next page %s', page);
                                 if ((options.direction > 0 && page > pages) || (options.direction < 0 && page < 1)) {
                                     // if more than 1 page, go back to first page if needed
                                     if (pages > 1 && options.resetPage) {
                                         this.navigatePage(pager, 'first')
-                                            .then(() => resolve(retval))
+                                            .then(() => {
+                                                debug('each resolved with %s', retval);
+                                                resolve(retval);
+                                            })
                                         ;
                                     } else {
+                                        debug('each resolved with %s', retval);
                                         resolve(retval);
                                     }
                                 } else {
                                     this.navigatePage(pager, page, {returnPage: true})
                                         .then(el => {
                                             if (el) {
-                                                w();
+                                                run();
                                             } else {
+                                                debug('each resolved with %s', retval);
                                                 resolve(retval);
                                             }
                                         })
                                     ;
                                 }
                             } else {
+                                debug('each resolved with %s', retval);
                                 resolve(retval);
                             }
                         }
@@ -531,10 +446,12 @@ class Sippol extends WebRobot {
                             if (typeof done == 'function') {
                                 done()
                                     .then(res => {
+                                        debug('finish iteration with %s', res);
                                         retval = res;
                                         next();
                                     })
                                     .catch(err => {
+                                        debug('finish iteration with error %s', err);
                                         if (err instanceof Error) throw err;
                                     })
                                 ;
@@ -552,12 +469,11 @@ class Sippol extends WebRobot {
                                         if (options.click) items.push(() => el.click());
                                         if (options.wait) items.push(() => this.sleep(this.delay));
                                         Work.works(items)
-                                            .then(() => {
-                                                finishEach(() => q.next());
-                                            })
+                                            .then(() => finishEach(() => q.next()))
                                             .catch(err => {
                                                 // is iteration stopped?
                                                 if (err instanceof SippolStopError) {
+                                                    debug('Got stop signal');
                                                     next = false;
                                                     q.done();
                                                 } else {
@@ -590,27 +506,28 @@ class Sippol extends WebRobot {
                         }
                         // apply filter
                         if (typeof filter == 'function') {
-                            filter(elements)
+                            filter(w.getRes(0))
                                 .then(items => doit(items, false))
                                 .catch(err => reject(err))
                             ;
                         } else {
-                            doit(elements);
+                            doit(w.getRes(0));
                         }
-                    })
-                    .catch(err => reject(err))
-                ;
+                    })],
+                ])
+                .then(res => resolve(res))
+                .catch(err => reject(err));
             }
             if (pager) {
                 this.getPages(pager, options.direction)
                     .then(result => {
                         pages = result;
                         page = options.direction > 0 ? 1 : pages;
-                        w();
+                        run();
                     })
                 ;
             } else {
-                w();
+                run();
             }
         });
     }
@@ -660,25 +577,41 @@ class Sippol extends WebRobot {
         options = options || {};
         if (options.useForm == undefined) options.useForm = true;
         const items = [];
-        const w = this.fetchDataWorks(options);
-        w.push(() => this.eachData(
+        const works = this.fetchDataWorks(options);
+        works.push([w => this.eachData(
             el => {
-                const data = new SippolData();
-                const works = this.fetchDataEachWorks(el, options);
-                works.push(() => new Promise((resolve, reject) => {
-                    this.retrData(el, data, options.useForm)
-                        .then(okay => {
-                            if (okay) items.push(data);
-                            resolve();
-                        })
-                        .catch(err => reject(err))
-                    ;
-                }));
-                return works;
+                const mode = options.mode ? options.mode : this.FETCH_DATA;
+                const xworks = this.fetchDataEachWorks(el, options);
+                switch (mode) {
+                    case this.FETCH_DATA:
+                        xworks.push([x => new Promise((resolve, reject) => {
+                            const data = new SippolData();
+                            this.retrData(el, data, options.useForm)
+                                .then(okay => {
+                                    if (okay) items.push(data);
+                                    resolve();
+                                })
+                                .catch(err => reject(err))
+                            ;
+                        })]);
+                        break;
+                    case this.FETCH_DOWNLOAD:
+                        xworks.push([x => new Promise((resolve, reject) => {
+                            this.saveSpp(el)
+                                .then(res => {
+                                    if (res) items.push(res);
+                                    resolve();
+                                })
+                                .catch(err => reject(err))
+                            ;
+                        })]);
+                        break;
+                }
+                return xworks;
             },
             () => Promise.resolve(items)
-        ));
-        return Work.works(w);
+        )]);
+        return Work.works(works);
     }
 
     fetchDataWorks(options) {
@@ -697,7 +630,7 @@ class Sippol extends WebRobot {
         const filters = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
         Object.keys(filters).forEach(key => {
             if (options[key] instanceof Date) {
-                works.push(() => new Promise((resolve, reject) => {
+                works.push([w => new Promise((resolve, reject) => {
                     this.fetchDataEachMatch(el, filters[key], options[key])
                         .then(okay => {
                             if (!okay) {
@@ -707,247 +640,183 @@ class Sippol extends WebRobot {
                             }
                         })
                     ;
-                }));
+                })]);
             }
         });
         return works;
     }
 
     fetchDataEachMatch(el, filter, since) {
-        return new Promise((resolve, reject) => {
-            let okay = true;
-            el.findElement(By.xpath('./..//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))
-                .then(xel => {
-                    xel.isDisplayed()
-                        .then(visible => {
-                            okay = visible;
-                            if (okay) {
-                                xel.getText()
-                                    .then(value => {
-                                        const s = value.split(',');
-                                        const dt = this.pickDate(s[1], true);
-                                        okay = dt >= since;
-                                        resolve(okay);
-                                    })
-                                ;
-                            } else {
-                                resolve(okay);
-                            }
-                        })
-                    ;
-                })
-                .catch(() => resolve(false))
-            ;
-        });
+        return Work.works([
+            [w => el.findElement(By.xpath('./..//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))],
+            [w => w.getRes(0).isDisplayed()],
+            [w => w.getRes(0).getText(), w => w.getRes(1)],
+            [w => new Promise((resolve, reject) => {
+                const value = w.getRes(2);
+                const s = value.split(',');
+                const dt = this.pickDate(s[1], true);
+                resolve(dt >= since);
+            }), w => w.getRes(2)],
+        ], {alwaysResolved: true});
     }
 
     retrData(el, data, useForm) {
-        return new Promise((resolve, reject) => {
-            this.retrDataStatusFromRow(el)
-                .then(okay => {
-                    // process only not cancelled data
-                    if (okay) {
-                        if (useForm) {
-                            this.retrDataFromForm(el, data)
-                                .then(() => resolve(true))
-                                .catch(err => reject(err))
-                            ;
-                        } else {
-                            this.retrDataFromRow(el, data)
-                                .then(() => resolve(true))
-                                .catch(err => reject(err))
-                            ;
-                        }
-                    } else {
-                        resolve(false);
-                    }
-                })
-                .catch(err => reject(err))
-            ;
-        });
+        return Work.works([
+            [w => this.retrDataStatusFromRow(el)],
+            [w => this.retrDataFromForm(el, data), w => w.getRes(0) && useForm],
+            [w => this.retrDataFromRow(el, data), w => w.getRes(0) && !useForm],
+        ]);
     }
 
     retrDataFromForm(el, data) {
         return Work.works([
-            () => this.clickEditSppButton(el),
-            () => this.getValuesFromSppForm(data),
+            w => this.clickEditSppButton(el),
+            w => this.getValuesFromSppForm(data),
         ]);
     }
 
     getValuesFromSppForm(data) {
-        return new Promise((resolve, reject) => {
-            this.waitFor(By.xpath('//form[@name="editForm"]'))
-                .then(form => {
-                    Work.works([
-                        () => new Promise((resolve, reject) => {
-                            this.getText([By.id('mySppLabel')], form)
-                                .then(result => {
-                                    data.Id = this.pickPid(result[0]);
-                                    resolve();
-                                })
-                                .catch(err => reject(err))
-                            ;
-                        }),
-                        () => new Promise((resolve, reject) => {
-                            this.getFormValues(form, ['noSpp', 'tglSpp', 'noSpm', 'tglSpm', 'noSp2d', 'tglSp2d', 'tglCair',
-                                'penerima', 'alamat', 'npwp', 'kode', 'noKontrak', 'tglKontrak', 'bank', 'bankCab', 'bankRek',
-                                'afektasi', 'untuk', 'ket'
-                            ])
-                                .then(values => {
-                                    data.Kode = this.pickStr(values.kode);
-                                    data.Penerima = this.pickStr(values.penerima);
-                                    data.Alamat = this.pickStr(values.alamat);
-                                    data.NPWP = this.pickNumber(values.npwp);
-                                    data.AccBank = this.pickStr(values.bank + ' ' + values.bankCab);
-                                    data.AccNo =this.pickStr(values.bankRek);
-                                    data.SKNomor = this.pickStr(values.noKontrak);
-                                    data.SKTanggal = this.pickDate(values.tglKontrak);
-                                    data.Untuk = this.pickStr(values.untuk);
-                                    data.Keterangan = this.pickStr(values.ket);
-                                    data.SPPNomor = this.pickNumber(values.noSpp);
-                                    data.SPPTanggal = this.pickDate(values.tglSpp);
-                                    data.SPMNomor = this.pickNumber(values.noSpm);
-                                    data.SPMTanggal = this.pickDate(values.tglSpm);
-                                    data.SP2DNomor = this.pickNumber(values.noSp2d);
-                                    data.SP2DTanggal = this.pickDate(values.tglSp2d);
-                                    data.CairTanggal = this.pickStr(values.tglCair);
-                                    data.Nominal = this.pickFloat(values.afektasi);
-                                    resolve();
-                                })
-                                .catch(err => reject(err))
-                            ;
-                        }),
-                        () => new Promise((resolve, reject) => {
-                            form.findElement(By.xpath('//div[@ng-show="vm.spp.pkId"]/span/span[text()="Batal"]'))
-                                .then(el => {
-                                    el.isDisplayed()
-                                        .then(visible => {
-                                            if (visible) {
-                                                data.Status = this.SPP_BATAL;
-                                            } else {
-                                                switch (true) {
-                                                    case data.CairTanggal != null:
-                                                        data.Status = this.SPP_CAIR;
-                                                        break;
-                                                    case data.SP2DTanggal != null:
-                                                        data.Status = this.SPP_SP2D;
-                                                        break;
-                                                    case data.SPMNomor != null:
-                                                        data.Status = this.SPP_SPM;
-                                                        break;
-                                                    default:
-                                                        data.Status = this.SPP_DRAFT;
-                                                        break;
-                                                }
-                                            }
-                                            resolve();
-                                        })
-                                    ;
-                                })
-                            ;
-                        }),
-                        () => this.click({el: form, data: By.xpath('//button[@class="close"]')})
-                    ])
-                        .then(() => resolve())
-                        .catch(err => reject(err))
-                    ;
-                })
-                .catch(err => reject(err))
-            ;
-        });
+        return Work.works([
+            // wait for form to completely shown
+            [w => this.waitFor(By.xpath('//form[@name="editForm"]'))],
+            // get form title
+            [w => this.getText([By.id('mySppLabel')], w.getRes(0))],
+            // get values
+            [w => this.getFormValues(w.getRes(0), ['noSpp', 'tglSpp', 'noSpm', 'tglSpm', 'noSp2d', 'tglSp2d', 'tglCair',
+                'penerima', 'alamat', 'npwp', 'kode', 'noKontrak', 'tglKontrak', 'bank', 'bankCab', 'bankRek',
+                'afektasi', 'untuk', 'ket'
+            ])],
+            // it is cancelled
+            [w => w.getRes(0).findElement(By.xpath('//div[@ng-show="vm.spp.pkId"]/span/span[text()="Batal"]'))],
+            // true when visible
+            [w => w.getRes(3).isDisplayed()],
+            // dismiss form
+            [w => this.click({el: w.getRes(0), data: By.xpath('//button[@class="close"]')})],
+            // parse data
+            [w => new Promise((resolve, reject) => {
+                let pid = w.getRes(1)[0];
+                let values = w.getRes(2);
+                let cancelled = w.getRes(4);
+                data.Id = this.pickPid(pid);
+                data.Kode = this.pickStr(values.kode);
+                data.Penerima = this.pickStr(values.penerima);
+                data.Alamat = this.pickStr(values.alamat);
+                data.NPWP = this.pickNumber(values.npwp);
+                data.AccBank = this.pickStr(values.bank + ' ' + values.bankCab);
+                data.AccNo =this.pickStr(values.bankRek);
+                data.SKNomor = this.pickStr(values.noKontrak);
+                data.SKTanggal = this.pickDate(values.tglKontrak);
+                data.Untuk = this.pickStr(values.untuk);
+                data.Keterangan = this.pickStr(values.ket);
+                data.SPPNomor = this.pickNumber(values.noSpp);
+                data.SPPTanggal = this.pickDate(values.tglSpp);
+                data.SPMNomor = this.pickNumber(values.noSpm);
+                data.SPMTanggal = this.pickDate(values.tglSpm);
+                data.SP2DNomor = this.pickNumber(values.noSp2d);
+                data.SP2DTanggal = this.pickDate(values.tglSp2d);
+                data.CairTanggal = this.pickStr(values.tglCair);
+                data.Nominal = this.pickFloat(values.afektasi);
+                if (cancelled) {
+                    data.Status = this.SPP_BATAL;
+                } else {
+                    switch (true) {
+                        case data.CairTanggal != null:
+                            data.Status = this.SPP_CAIR;
+                            break;
+                        case data.SP2DTanggal != null:
+                            data.Status = this.SPP_SP2D;
+                            break;
+                        case data.SPMNomor != null:
+                            data.Status = this.SPP_SPM;
+                            break;
+                        default:
+                            data.Status = this.SPP_DRAFT;
+                            break;
+                    }
+                }
+                resolve(data);
+            })],
+        ]);
     }
 
     retrDataFromRow(el, data) {
         return Work.works([
-            () => new Promise((resolve, reject) => {
-                this.retrDataIdFromRow(el)
-                    .then(id => {
-                        data.Id = id;
-                        resolve();
-                    })
-                    .catch(err => reject(err))
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                this.getText([
-                    By.xpath('./../td[3]/span[1]'),         By.xpath('./../td[3]/span[2]'), // SPP
-                    By.xpath('./../td[4]/span[1]/strong'),  By.xpath('./../td[4]/span[2]'), // SPM
-                    By.xpath('./../td[5]/span[1]/strong'),  By.xpath('./../td[5]/span[2]'), // SP2D
-                    By.xpath('./../td[7]/strong'),                                          // Nominal
-                ], el)
-                    .then(result => {
-                        data.SPPNomor = this.pickNumber(result[0]);
-                        data.SPPTanggal = this.pickDate(result[1]);
-                        data.SPMNomor = this.pickNumber(result[2]);
-                        data.SPMTanggal = this.pickDate(result[3]);
-                        data.SP2DNomor = this.pickNumber(result[4]);
-                        data.SP2DTanggal = this.pickDate(result[5]);
-                        data.Nominal = this.pickFloat(result[6]);
-                        resolve();
-                    })
-                    .catch(err => reject(err))
-                ;
-            })
+            [w => this.retrDataIdFromRow(el)],
+            [w => this.getText([
+                By.xpath('./../td[3]/span[1]'),         By.xpath('./../td[3]/span[2]'), // SPP
+                By.xpath('./../td[4]/span[1]/strong'),  By.xpath('./../td[4]/span[2]'), // SPM
+                By.xpath('./../td[5]/span[1]/strong'),  By.xpath('./../td[5]/span[2]'), // SP2D
+                By.xpath('./../td[7]/strong'),                                          // Nominal
+            ], el)],
+            [w => new Promise((resolve, reject) => {
+                let id = w.getRes(0);
+                let values = w.getRes(1);
+                data.Id = id;
+                data.SPPNomor = this.pickNumber(values[0]);
+                data.SPPTanggal = this.pickDate(values[1]);
+                data.SPMNomor = this.pickNumber(values[2]);
+                data.SPMTanggal = this.pickDate(values[3]);
+                data.SP2DNomor = this.pickNumber(values[4]);
+                data.SP2DTanggal = this.pickDate(values[5]);
+                data.Nominal = this.pickFloat(values[6]);
+                resolve(data);
+            })],
         ]);
     }
 
     retrDataIdFromRow(el) {
-        return new Promise((resolve, reject) => {
-            el.findElement(By.xpath('./../td[2]'))
-                .then(xel => {
-                    xel.getAttribute('title')
-                        .then(title => {
-                            resolve(this.pickPid(title));
-                        })
-                    ;
-                })
-                .catch(err => reject(err))
-            ;
-        });
+        return Work.works([
+            w => el.findElement(By.xpath('./../td[2]')),
+            w => w.getRes(0).getAttribute('title'),
+            w => Promise.resolve(this.pickPid(w.getRes(1))),
+        ]);
     }
 
     retrDataStatusFromRow(el) {
-        return new Promise((resolve, reject) => {
-            el.findElement(By.xpath('./../td[3]/span[@ng-show="spp.pkSppFlag!=0"]'))
-                .then(xel => {
-                    xel.getAttribute('class')
-                        .then(xclass => {
-                            resolve(xclass.indexOf('glyphicon-remove') < 0);
-                        })
-                    ;
-                })
-                .catch(err => reject(err))
-            ;
-        });
+        return Work.works([
+            w => el.findElement(By.xpath('./../td[3]/span[@ng-show="spp.pkSppFlag!=0"]')),
+            w => w.getRes(0).getAttribute('class'),
+            w => Promise.resolve(w.getRes(1).indexOf('glyphicon-remove') < 0),
+        ]);
+    }
+
+    saveSpp(el) {
+        return Work.works([
+            [w => this.getText([
+                By.xpath('./../td[2]'),                 // Jenis
+                By.xpath('./../td[5]/span[1]/strong'),  // SP2D Nomor
+            ], el)],
+            [w => el.findElement(By.xpath('./../td[2]'))],
+            [w => w.getRes(1).getAttribute('title'), w => w.getRes(1)],
+            [w => el.findElement(By.xpath('./../td[6]/span/span[@ng-show="spp.tglCair"]'))],
+            [w => w.getRes(3).isDisplayed(), w => w.getRes(3)],
+            [w => w.getRes(3).click(), w => w.getRes(4)],
+            [w => new Promise((resolve, reject) => {
+                const j = w.getRes(0)[0].split(' ');
+                const sp2d = w.getRes(0)[1];
+                const pid = this.pickPid(w.getRes(2));
+                const filename = 'SP2D-' + j[1] + '-' + j[0] + this.fillZero(sp2d, 6) + '-' + this.fillZero(pid, 6) + '.spp';
+                resolve(filename);
+            })],
+        ]);
     }
 
     createSpp(data) {
         return Work.works([
-            () => this.clickAddSppButton(),
-            () => this.sleep(this.opdelay),
-            () => this.fillSppForm(data),
+            w => this.clickAddSppButton(),
+            w => this.sleep(this.opdelay),
+            w => this.fillSppForm(data),
         ]);
     }
 
     updateSpp(id, data) {
-        return new Promise((resolve, reject) => {
-            this.locateData(id)
-                .then(el => {
-                    if (el) {
-                        Work.works([
-                            () => this.clickEditSppButton(el),
-                            () => this.sleep(this.opdelay),
-                            () => this.fillSppForm(data),
-                        ])
-                            .then(() => resolve())
-                            .catch(err => reject(err))
-                        ;
-                    } else {
-                        reject('SPP with id ' + id + ' not found!');
-                    }
-                })
-            ;
-        });
+        return Work.works([
+            [w => this.locateData(id)],
+            [w => this.clickEditSppButton(w.getRes(0)), w => w.getRes(0)],
+            [w => this.sleep(this.opdelay), w => w.getRes(0)],
+            [w => this.fillSppForm(data), w => w.getRes(0)],
+            [w => Promise.reject('SPP with id ' + id + ' is not found!'), w => !w.getRes(0)],
+        ]);
     }
 
     clickAddSppButton() {
@@ -955,76 +824,38 @@ class Sippol extends WebRobot {
     }
 
     clickEditSppButton(el) {
-        let rel;
-        let needClick = true;
         return Work.works([
-            () => new Promise((resolve, reject) => {
-                el.findElement(By.xpath('./..'))
-                    .then(xel => {
-                        rel = xel;
-                        resolve();
-                    })
-                    .catch(err => reject(err))
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                rel.getAttribute('class')
-                    .then(xclass => {
-                        if (xclass == 'info') needClick = false;
-                        resolve();
-                    })
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                if (needClick) {
-                    el.click()
-                        .then(() => resolve())
-                        .catch(err => reject(err))
-                    ;
-                } else {
-                    resolve();
-                }
-            }),
-            () => this.click({el: el, data: By.xpath('./../td[9]/button[@ng-click="vm.sppEdit(spp)"]')}),
+            [w => el.findElement(By.xpath('./..'))],
+            [w => w.getRes(0).getAttribute('class')],
+            [w => el.click(), w => w.getRes(1) != 'info'],
+            [w => this.click({el: el, data: By.xpath('./../td[9]/button[@ng-click="vm.sppEdit(spp)"]')})],
         ]);
     }
 
     fillSppForm(data) {
-        let w = [];
+        let works = [];
         let tabs = ['spp', 'penerima', 'gaji', 'rincian', 'spm', 'sp2d', 'tu'];
         let forms = this.getSppFormData(data);
         for (let key in forms) {
             let tabIdx = tabs.indexOf(key);
             let xpath = By.xpath('//div[@id="agrTab"]/ul/li[@index="' + tabIdx + '"]/a');
-            w.push(() => this.waitAndClick(xpath));
+            works.push([w => this.waitAndClick(xpath)]);
             if (key == 'rincian') {
                 // process only once
-                w.push(() => new Promise((resolve, reject) => {
-                    this.getDriver().findElements(By.xpath('//tr[@ng-repeat="trsRek in vm.trsReks track by trsRek.id"]'))
-                        .then(elements => {
-                            if (!elements.length) {
-                                Work.works([
-                                    () => this.waitAndClick(By.xpath('//button[@ng-click="vm.trsRekAdd()"]')),
-                                    () => this.fillInForm(forms[key], By.xpath('//h4[@id="myTrsRekLabel"]'),
-                                        By.xpath('//h4[@id="myTrsRekLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]')
-                                    ),
-                                ])
-                                    .then(() => resolve())
-                                    .catch(err => reject(err))
-                                ;
-                            } else {
-                                resolve();
-                            }
-                        })
-                    ;
-                }));
+                let idx = works.length;
+                works.push([w => this.getDriver().findElements(By.xpath('//tr[@ng-repeat="trsRek in vm.trsReks track by trsRek.id"]'))]);
+                works.push([w => this.waitAndClick(By.xpath('//button[@ng-click="vm.trsRekAdd()"]')), w => w.getRes(idx).length == 0]);
+                works.push([w => this.fillInForm(forms[key],
+                    By.xpath('//h4[@id="myTrsRekLabel"]'),
+                    By.xpath('//h4[@id="myTrsRekLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]')
+                ), w => w.getRes(idx).length == 0]);
             } else {
-                w.push(() => this.fillInForm(forms[key], xpath));
+                works.push([w => this.fillInForm(forms[key], xpath)]);
             }
         }
-        w.push(() => this.sleep(this.opdelay));
-        w.push(() => this.waitAndClick(By.xpath('//h4[@id="mySppLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]')));
-        return Work.works(w);
+        works.push([w => this.sleep(this.opdelay)]);
+        works.push([w => this.waitAndClick(By.xpath('//h4[@id="mySppLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]'))]);
+        return Work.works(works);
     }
 
     getSppFormData(data) {
@@ -1076,41 +907,31 @@ class Sippol extends WebRobot {
                 mapping.done = (data, next) => {
                     // wait for autocomplete-row
                     Work.works([
-                        () => this.sleep(),
-                        () => new Promise((resolve, reject) => {
-                            this.getDriver().findElements(By.xpath('//div[@class="angucomplete-row"]'))
-                                .then(elements => {
-                                    const q = new Queue(elements, (el) => {
-                                        el.getText()
-                                            .then((result) => {
-                                                if (result.indexOf(data.value) >= 0) {
-                                                    el.click()
-                                                        .then(() => resolve())
-                                                        .catch(err => reject(err))
-                                                    ;
-                                                } else {
-                                                    q.next();
-                                                }
-                                            })
-                                        ;
-                                    });
-                                    q.once('done', () => reject('No match for ' + data.value));
-                                })
-                                .catch(err => reject(err))
-                            ;
-                        })
+                        [w => this.sleep()],
+                        [w => this.getDriver().findElements(By.xpath('//div[@class="angucomplete-row"]'))],
+                        [w => new Promise((resolve, reject) => {
+                            const q = new Queue(w.getRes(1), el => {
+                                Work.works([
+                                    [x => el.getText()],
+                                    [x => el.click(), x => x.getRes(0).indexOf(data.value) >= 0],
+                                    [x => Promise.reject(), x => x.getRes(0).indexOf(data.value) < 0],
+                                ])
+                                .then(() => resolve())
+                                .catch(err => q.next());
+                            });
+                            q.once('done', () => reject('No match for ' + data.value));
+                        })],
                     ])
-                        .then(() => next())
-                        .catch(err => {
-                            // retry once more
-                            if (!data.retry) {
-                                data.retry = true;
-                                data.handler();
-                            } else if (err instanceof Error) {
-                                throw err;
-                            }
-                        })
-                    ;
+                    .then(() => next())
+                    .catch(err => {
+                        // retry once more
+                        if (!data.retry) {
+                            data.retry = true;
+                            data.handler();
+                        } else if (err instanceof Error) {
+                            throw err;
+                        }
+                    });
                 }
             }
             result.push(mapping);
@@ -1119,128 +940,93 @@ class Sippol extends WebRobot {
     }
 
     uploadDocs(id, docs) {
-        let el, elements, result = {};
         return Work.works([
-            () => new Promise((resolve, reject) => {
-                this.locateData(id)
-                    .then(xel => {
-                        if (xel) {
-                            el = xel;
-                            resolve();
-                        } else {
-                            reject('SPP with id ' + id + ' is not found!');
+            [w => this.locateData(id)],
+            [w => this.click({el: w.getRes(0), data: By.xpath('../td[6]/span/span[@ng-show="spp.syaratId"]')}),
+                w => w.getRes(0)],
+            [w => this.getDriver().findElements(By.xpath('//ul/li[@ng-repeat="dok in spp.doks"]')),
+                w => w.getRes(0)],
+            [w => this.uploadDocFiles(w.getRes(2), docs),
+                w => w.getRes(0)],
+            [w => Promise.reject('Unable to upload, SPP with id ' + id + ' is not found!'),
+                w => !w.getRes(0)],
+        ]);
+    }
+
+    uploadDocFiles(elements, docs) {
+        return new Promise((resolve, reject) => {
+            let result = {};
+            let idx = -1;
+            const q = new Queue(elements, el => {
+                idx++;
+                Work.works([
+                    [w => el.getText()],
+                    [w => el.findElement(By.xpath('./span[contains(@class,"glyphicon-download")]'))],
+                    [w => w.getRes(1).isDisplayed()],
+                    [w => new Promise((resolve, reject) => {
+                        let doctype = this.getDocType(w.getRes(0));
+                        if (!doctype) {
+                            return resolve();
                         }
-                    })
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                this.click({el: el, data: By.xpath('../td[6]/span/span[@ng-show="spp.syaratId"]')})
-                    .then(() => resolve())
-                    .catch(err => reject(err))
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                this.getDriver().findElements(By.xpath('//ul/li[@ng-repeat="dok in spp.doks"]'))
-                    .then(xelements => {
-                        if (xelements.length) {
-                            elements = xelements;
-                            resolve();
-                        } else {
-                            reject('No document available!');
+                        if (w.getRes(2)) {
+                            if (!result.skipped) result.skipped = [];
+                            result.skipped.push(doctype);
+                            return resolve();
                         }
-                    })
-                ;
-            }),
-            () => new Promise((resolve, reject) => {
-                let idx = -1;
-                const q = new Queue(elements, el => {
-                    idx++;
-                    let xel, title, visible;
-                    Work.works([
-                        () => new Promise((resolve, reject) => {
-                            el.getText()
-                                .then(text => {
-                                    title = text;
+                        if (docs[doctype] && fs.existsSync(docs[doctype])) {
+                            this.uploadDocFile(w.getRes(1), docs[doctype], idx)
+                                .then(res => {
+                                    if (res) {
+                                        if (!result.updated) result.updated = [];
+                                        result.updated.push(doctype);
+                                    }
                                     resolve();
                                 })
                             ;
-                        }),
-                        () => new Promise((resolve, reject) => {
-                            el.findElement(By.xpath('./span[contains(@class,"glyphicon-download")]'))
-                                .then(d => {
-                                    xel = d;
-                                    resolve();
-                                })
-                                .catch(err => reject(err))
-                            ;
-                        }),
-                        () => new Promise((resolve, reject) => {
-                            xel.isDisplayed()
-                                .then(xvisible => {
-                                    visible = xvisible;
-                                    resolve();
-                                })
-                            ;
-                        }),
-                        () => new Promise((resolve, reject) => {
-                            let doctype = this.getDocType(title);
-                            if (!doctype) {
-                                return resolve();
-                            }
-                            if (visible) {
-                                if (!result.skipped) result.skipped = [];
-                                result.skipped.push(doctype);
-                                return resolve();
-                            }
-                            if (docs[doctype] && fs.existsSync(docs[doctype])) {
-                                this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))
-                                    .then(files => {
-                                        if (idx < files.length) {
-                                            console.log('Uploading document %s', docs[doctype]);
-                                            files[idx].sendKeys(docs[doctype])
-                                                .then(() => {
-                                                    const stime = Date.now();
-                                                    // wait for upload to complete
-                                                    const waitUpload = () => {
-                                                        xel.isDisplayed()
-                                                            .then(visible => {
-                                                                if (visible) {
-                                                                    if (!result.updated) result.updated = [];
-                                                                    result.updated.push(doctype);
-                                                                    resolve();
-                                                                } else {
-                                                                    // should we retry?
-                                                                    const ctime = Date.now();
-                                                                    if (ctime - stime <= this.updelay) {
-                                                                        setTimeout(waitUpload, 100);
-                                                                    } else {
-                                                                        console.log('Upload for %s timed out!', docs[doctype]);
-                                                                        reject();
-                                                                    }
-                                                                }
-                                                            })
-                                                        ;
-                                                    }
-                                                    waitUpload();
-                                                })
-                                                .catch(err => reject(err))
-                                            ;
-                                        } else {
-                                            resolve();
-                                        }
-                                    })
-                                ;
-                            } else {
-                                resolve();
-                            }
-                        }),
-                    ])
-                        .then(() => q.next())
-                        .catch(() => q.next())
-                    ;
-                });
-                q.once('done', () => resolve(result));
-            }),
+                        } else {
+                            resolve();
+                        }
+                    })],
+                ])
+                .then(() => q.next())
+                .catch(() => q.next());
+            });
+            q.once('done', () => resolve(result));
+        });
+    }
+
+    uploadDocFile(el, file, index) {
+        return Work.works([
+            [w => this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))],
+            [w => Promise.resolve(console.log('Uploading document %s', file)),
+                w => idx < w.getRes(0).length],
+            [w => w.getRes(0)[index].sendKeys(file),
+                w => idx < w.getRes(0).length],
+            [w => new Promise((resolve, reject) => {
+                    const stime = Date.norun();
+                    // wait for upload to complete
+                    const f = () => {
+                        el.isDisplayed()
+                            .then(visible => {
+                                if (visible) {
+                                    resolve(true);
+                                } else {
+                                    // should we retry?
+                                    const ctime = Date.norun();
+                                    if (ctime - stime <= this.updelay) {
+                                        setTimeout(f, 100);
+                                    } else {
+                                        console.log('Upload for %s timed out!', file);
+                                        resolve(false);
+                                    }
+                                }
+                            })
+                        ;
+                    }
+                    f();
+                }),
+                w => idx < w.getRes(0).length],
+            [w => Promise.resolve(w.getRes(3))],
         ]);
     }
 }
