@@ -999,11 +999,11 @@ class Sippol extends WebRobot {
         return Work.works([
             [w => this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))],
             [w => Promise.resolve(console.log('Uploading document %s', file)),
-                w => idx < w.getRes(0).length],
+                w => index < w.getRes(0).length],
             [w => w.getRes(0)[index].sendKeys(file),
-                w => idx < w.getRes(0).length],
+                w => index < w.getRes(0).length],
             [w => new Promise((resolve, reject) => {
-                    const stime = Date.norun();
+                    const stime = Date.now();
                     // wait for upload to complete
                     const f = () => {
                         el.isDisplayed()
@@ -1012,7 +1012,7 @@ class Sippol extends WebRobot {
                                     resolve(true);
                                 } else {
                                     // should we retry?
-                                    const ctime = Date.norun();
+                                    const ctime = Date.now();
                                     if (ctime - stime <= this.updelay) {
                                         setTimeout(f, 100);
                                     } else {
@@ -1025,8 +1025,9 @@ class Sippol extends WebRobot {
                     }
                     f();
                 }),
-                w => idx < w.getRes(0).length],
-            [w => Promise.resolve(w.getRes(3))],
+                w => index < w.getRes(0).length],
+            [w => Promise.resolve(w.getRes(3)),
+                w => index < w.getRes(0).length],
         ]);
     }
 }
