@@ -49,6 +49,10 @@ class SippolBridge {
             this.maxNotifiedItems = options.maxNotifiedItems;
             delete options.maxNotifiedItems;
         }
+        if (options.maxDownloadItems) {
+            this.maxDownloadItems = options.maxDownloadItems;
+            delete options.maxDownloadItems;
+        }
         if (options.accepts) {
             this.accepts = options.accepts;
             delete options.accepts;
@@ -138,21 +142,26 @@ class SippolBridge {
 
     notifyItems(items, callback) {
         if (Array.isArray(items)) {
-            let maxNotifiedItems = this.maxNotifiedItems || 500;
-            let count = items.length;
-            let pos = 0;
-            while (count) {
-                let n = maxNotifiedItems > 0 && count > maxNotifiedItems ?
-                    maxNotifiedItems : count;
-                let part = items.slice(pos, n);
-                count -= n;
-                pos += n;
+            this.processItemsWithLimit(items, part => {
                 const callbackQueue = SippolQueue.createCallbackQueue({items: part}, callback);
                 SippolQueue.addQueue(callbackQueue);
-            }
+            }, this.maxNotifiedItems || 500);
         } else {
             const callbackQueue = SippolQueue.createCallbackQueue(items, callback);
             SippolQueue.addQueue(callbackQueue);
+        }
+    }
+
+    processItemsWithLimit(items, callback, limit) {
+        let maxItems = limit || 100;
+        let count = items.length;
+        let pos = 0;
+        while (count) {
+            let n = maxItems > 0 && count > maxItems ? maxItems : count;
+            let part = items.slice(pos, n);
+            callback(part);
+            count -= n;
+            pos += n;
         }
     }
 
@@ -263,25 +272,27 @@ class SippolBridge {
             }, queue.data)),
             w => new Promise((resolve, reject) => {
                 const items = w.getRes(0);
+                const downloaddir = this.sippol.options.downloaddir;
                 if (items.length && queue.callback) {
-                    const zip = new JSZip();
-                    const downloaddir = this.sippol.options.downloaddir;
-                    const q = new Queue(items, spp => {
-                        const filename = path.join(downloaddir, spp);
-                        if (fs.existsSync(filename)) {
-                            fs.readFile(filename, (err, data) => {
-                                if (!err) {
-                                    zip.file(spp, data);
-                                }
-                                q.next();
-                            });
-                        }
-                    });
-                    q.once('done', () => {
-                        zip.generateAsync({type: 'nodebuffer'})
-                            .then(stream => {
-                                this.notifyItems({download: stream}, queue.callback);
-                            });
+                    this.processItemsWithLimit(items, part => {
+                        const zip = new JSZip();
+                        const q = new Queue(part, spp => {
+                            const filename = path.join(downloaddir, spp);
+                            if (fs.existsSync(filename)) {
+                                fs.readFile(filename, (err, data) => {
+                                    if (!err) {
+                                        zip.file(spp, data);
+                                    }
+                                    q.next();
+                                });
+                            }
+                        }, this.maxDownloadItems || 250);
+                        q.once('done', () => {
+                            zip.generateAsync({type: 'nodebuffer'})
+                                .then(stream => {
+                                    this.notifyItems({download: stream}, queue.callback);
+                                });
+                        });
                     });
                 }
                 resolve(items);
