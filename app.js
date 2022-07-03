@@ -170,7 +170,26 @@ class App {
                 })
                 .catch(err => console.log(err))
             ;
+            this.checkReadiness();
         });
+    }
+
+    checkReadiness() {
+        const readinessTimeout = this.config.readinessTimeout || 30000; // 30 seconds
+        this.startTime = Date.now();
+        let interval = setInterval(() => {
+            let now = Date.now();
+            let isReady = this.readyCount() == this.bridges.length;
+            if (isReady) {
+                clearInterval(interval);
+                console.log('Readiness checking is done...');
+            } else {
+                if (now - this.startTime > readinessTimeout) {
+                    throw new Error(util.format('Bridge is not ready within %d seconds timeout!', readinessTimeout / 1000));
+                }
+            }
+        }, 1000);
+        console.log('Readiness checking has been started...');
     }
 
     handleConnection(socket) {
@@ -335,7 +354,7 @@ class App {
         const year = queue.data && queue.data.year ? queue.data.year : null;
         // get prioritized bridge based on accepts type
         this.bridges.forEach(b => {
-            if (b.isReady() && b.year == year && Array.isArray(b.accepts) && b.accepts.indexOf(queue.type) >= 0) {
+            if (b.isOperational() && b.year == year && Array.isArray(b.accepts) && b.accepts.indexOf(queue.type) >= 0) {
                 bridge = b;
                 return true;
             }
@@ -343,7 +362,7 @@ class App {
         // fallback to default bridge
         if (!bridge) {
             this.bridges.forEach(b => {
-                if (b.isReady() && b.year == year && b.accepts == undefined) {
+                if (b.isOperational() && b.year == year && b.accepts == undefined) {
                     bridge = b;
                     return true;
                 }
@@ -357,11 +376,15 @@ class App {
             return true;
         }
         // only handle when bridge is ready
+        return this.readyCount() > 0;
+    }
+
+    readyCount() {
         let readyCnt = 0;
         this.bridges.forEach(b => {
-            if (b.isReady()) readyCnt++;
+            if (b.isOperational()) readyCnt++;
         });
-        return readyCnt > 0;
+        return readyCnt;
     }
 
     canHandleNext(queue) {

@@ -32,8 +32,13 @@ const JSZip = require('jszip');
 
 class SippolBridge {
 
+    STATE_NONE = 1
+    STATE_SELF_TEST = 2
+    STATE_OPERATIONAL = 3
+
     constructor(options) {
         this.sippol = new Sippol(this.getOptions(options));
+        this.state = this.STATE_NONE;
     }
 
     getOptions(options) {
@@ -87,7 +92,21 @@ class SippolBridge {
     }
 
     selfTest() {
-        return this.do(w => this.waitUntilReady());
+        if (this.state < this.STATE_SELF_TEST) {
+            this.state = this.STATE_SELF_TEST;
+        }
+        const f = () => {
+            this.state = this.STATE_OPERATIONAL;
+            return this.state;
+        }
+        return this.do([
+            w => this.waitUntilReady(),
+            w => Promise.resolve(f()),
+        ]);
+    }
+
+    isOperational() {
+        return this.state == this.STATE_OPERATIONAL;
     }
 
     isReady() {
