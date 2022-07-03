@@ -394,6 +394,10 @@ class App {
         const bridge = this.getQueueHandler(queue);
         const current = this.dequeue.getCurrent();
         if (bridge && current) {
+            // bridge currently has no queue, so it can handle next
+            if (typeof bridge.queue == 'undefined') {
+                return true;
+            }
             return current.bridge != bridge && bridge.queue.status != SippolQueue.STATUS_PROCESSING;
         }
         return false;
