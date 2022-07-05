@@ -189,11 +189,7 @@ class Sippol extends WebRobot {
     }
 
     stop() {
-        return Work.works([
-            [w => this.getDriver().quit(), w => this.driver],
-        ], {done: () => {
-            this.driver = null;
-        }});
+        return this.close();
     }
 
     login() {

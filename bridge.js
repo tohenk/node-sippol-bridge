@@ -142,7 +142,12 @@ class SippolBridge {
         if (typeof theworks == 'function') {
             works.push(theworks);
         }
-        return Work.works(works, {done: w => this.sippol.stop()});
+        return Work.works(works, {
+            done: () => Work.works([
+                w => this.sippol.stop(),
+                w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay)),
+            ])
+        });
     }
 
     list(options) {
@@ -284,14 +289,25 @@ class SippolBridge {
     }
 
     downloadSpp(queue) {
+        const downloaddir = this.sippol.options.downloaddir;
         return Work.works([
+            w => new Promise((resolve, reject) => {
+                fs.readdir(downloaddir, {withFileTypes: true}, (err, files) => {
+                    if (err) return reject(err);
+                    files.forEach(file => {
+                        if (file.isFile() && file.name.endsWith('.spp')) {
+                            fs.unlinkSync(path.join(downloaddir, file.name));
+                        }
+                    });
+                    resolve();
+                });
+            }),
             w => this.list(Object.assign({
                 mode: this.sippol.FETCH_DOWNLOAD,
                 status: this.sippol.status.SP2D_CAIR
             }, queue.data)),
             w => new Promise((resolve, reject) => {
-                const items = w.getRes(0);
-                const downloaddir = this.sippol.options.downloaddir;
+                const items = w.getRes(1);
                 if (items.length && queue.callback) {
                     this.processItemsWithLimit(items, part => {
                         const zip = new JSZip();
