@@ -903,7 +903,7 @@ class Sippol extends WebRobot {
                 mapping.done = (data, next) => {
                     // wait for autocomplete-row
                     Work.works([
-                        [w => this.sleep()],
+                        [w => this.sleep(this.opdelay)],
                         [w => this.getDriver().findElements(By.xpath('//div[@class="angucomplete-row"]'))],
                         [w => new Promise((resolve, reject) => {
                             const q = new Queue(w.getRes(1), el => {
