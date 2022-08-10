@@ -390,7 +390,7 @@ class Sippol extends WebRobot {
         const works = options.works;
         const done = options.done;
         const pager = options.pager;
-        if (options.click == undefined) options.click = true;
+        if (options.click == undefined) options.click = false;
         if (options.wait == undefined) options.wait = true;
         if (options.visible == undefined) options.visible = false;
         if (options.direction == undefined) options.direction = 1;
@@ -462,14 +462,20 @@ class Sippol extends WebRobot {
                                 const q = new Queue(elements, el => {
                                     const f = () => {
                                         const items = works(el);
-                                        if (options.click) items.push(() => el.click());
+                                        if (options.click) {
+                                            if (options.parentClick) {
+                                                items.push(() => el.findElement(By.xpath('./..')).click());
+                                            } else {
+                                                items.push(() => el.click());
+                                            }
+                                        }
                                         if (options.wait) items.push(() => this.sleep(this.delay));
                                         Work.works(items)
                                             .then(() => finishEach(() => q.next()))
                                             .catch(err => {
                                                 // is iteration stopped?
                                                 if (err instanceof SippolStopError) {
-                                                    debug('Got stop signal');
+                                                    debug('got stop signal');
                                                     next = false;
                                                     q.done();
                                                 } else {
@@ -531,7 +537,7 @@ class Sippol extends WebRobot {
     eachData(work, done, filter, direction = 1) {
         const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
         return this.each({
-            check: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]/td[1]'),
+            check: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
             works: el => work(el),
             done: done,
@@ -644,7 +650,7 @@ class Sippol extends WebRobot {
 
     fetchDataEachMatch(el, filter, since) {
         return Work.works([
-            [w => el.findElement(By.xpath('./..//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))],
+            [w => el.findElement(By.xpath('.//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))],
             [w => w.getRes(0).isDisplayed()],
             [w => w.getRes(0).getText(), w => w.getRes(1)],
             [w => new Promise((resolve, reject) => {
@@ -739,10 +745,10 @@ class Sippol extends WebRobot {
         return Work.works([
             [w => this.retrDataIdFromRow(el)],
             [w => this.getText([
-                By.xpath('./../td[3]/span[1]'),         By.xpath('./../td[3]/span[2]'), // SPP
-                By.xpath('./../td[4]/span[1]/strong'),  By.xpath('./../td[4]/span[2]'), // SPM
-                By.xpath('./../td[5]/span[1]/strong'),  By.xpath('./../td[5]/span[2]'), // SP2D
-                By.xpath('./../td[7]/strong'),                                          // Nominal
+                By.xpath('./td[3]/span[1]'),         By.xpath('./td[3]/span[2]'), // SPP
+                By.xpath('./td[4]/span[1]/strong'),  By.xpath('./td[4]/span[2]'), // SPM
+                By.xpath('./td[5]/span[1]/strong'),  By.xpath('./td[5]/span[2]'), // SP2D
+                By.xpath('./td[7]/strong'),                                       // Nominal
             ], el)],
             [w => new Promise((resolve, reject) => {
                 let id = w.getRes(0);
@@ -762,7 +768,7 @@ class Sippol extends WebRobot {
 
     retrDataIdFromRow(el) {
         return Work.works([
-            w => el.findElement(By.xpath('./../td[2]')),
+            w => el.findElement(By.xpath('./td[2]')),
             w => w.getRes(0).getAttribute('title'),
             w => Promise.resolve(this.pickPid(w.getRes(1))),
         ]);
@@ -770,7 +776,7 @@ class Sippol extends WebRobot {
 
     retrDataStatusFromRow(el) {
         return Work.works([
-            w => el.findElement(By.xpath('./../td[3]/span[@ng-show="spp.pkSppFlag!=0"]')),
+            w => el.findElement(By.xpath('./td[3]/span[@ng-show="spp.pkSppFlag!=0"]')),
             w => w.getRes(0).getAttribute('class'),
             w => Promise.resolve(w.getRes(1).indexOf('glyphicon-remove') < 0),
         ]);
@@ -779,12 +785,12 @@ class Sippol extends WebRobot {
     saveSpp(el) {
         return Work.works([
             [w => this.getText([
-                By.xpath('./../td[2]'),                 // Jenis
-                By.xpath('./../td[5]/span[1]/strong'),  // SP2D Nomor
+                By.xpath('./td[2]'),                 // Jenis
+                By.xpath('./td[5]/span[1]/strong'),  // SP2D Nomor
             ], el)],
-            [w => el.findElement(By.xpath('./../td[2]'))],
+            [w => el.findElement(By.xpath('./td[2]'))],
             [w => w.getRes(1).getAttribute('title'), w => w.getRes(1)],
-            [w => el.findElement(By.xpath('./../td[6]/span/span[@ng-show="spp.tglCair"]'))],
+            [w => el.findElement(By.xpath('./td[6]/span/span[@ng-show="spp.tglCair"]'))],
             [w => w.getRes(3).isDisplayed(), w => w.getRes(3)],
             [w => w.getRes(3).click(), w => w.getRes(4)],
             [w => new Promise((resolve, reject) => {
@@ -821,10 +827,9 @@ class Sippol extends WebRobot {
 
     clickEditSppButton(el) {
         return Work.works([
-            [w => el.findElement(By.xpath('./..'))],
-            [w => w.getRes(0).getAttribute('class')],
-            [w => el.click(), w => w.getRes(1) != 'info'],
-            [w => this.click({el: el, data: By.xpath('./../td[9]/button[@ng-click="vm.sppEdit(spp)"]')})],
+            [w => el.findElement(By.xpath('./td[2]'))],
+            [w => w.getRes(0).click()],
+            [w => this.click({el: el, data: By.xpath('./td[9]/button[@ng-click="vm.sppEdit(spp)"]')})],
         ]);
     }
 
@@ -938,11 +943,15 @@ class Sippol extends WebRobot {
     uploadDocs(id, docs) {
         return Work.works([
             [w => this.locateData(id)],
-            [w => this.click({el: w.getRes(0), data: By.xpath('../td[6]/span/span[@ng-show="spp.syaratId"]')}),
+            [w => w.getRes(0).click(),
+                w => w.getRes(0)],
+            [w => w.getRes(0).findElement(By.xpath('./td[6]/span/span[@ng-show="spp.syaratId"]')),
+                w => w.getRes(0)],
+            [w => w.getRes(2).click(),
                 w => w.getRes(0)],
             [w => this.getDriver().findElements(By.xpath('//ul/li[@ng-repeat="dok in spp.doks"]')),
                 w => w.getRes(0)],
-            [w => this.uploadDocFiles(w.getRes(2), docs),
+            [w => this.uploadDocFiles(w.getRes(4), docs),
                 w => w.getRes(0)],
             [w => Promise.reject('Unable to upload, SPP with id ' + id + ' is not found!'),
                 w => !w.getRes(0)],
@@ -951,7 +960,7 @@ class Sippol extends WebRobot {
 
     uploadDocFiles(elements, docs) {
         return new Promise((resolve, reject) => {
-            let result = {};
+            const result = {};
             let idx = -1;
             const q = new Queue(elements, el => {
                 idx++;
@@ -962,9 +971,11 @@ class Sippol extends WebRobot {
                     [w => new Promise((resolve, reject) => {
                         let doctype = this.getDocType(w.getRes(0));
                         if (!doctype) {
+                            debug('%s: document not available!', w.getRes(0));
                             return resolve();
                         }
                         if (w.getRes(2)) {
+                            debug('%s: document already uploaded!', w.getRes(0));
                             if (!result.skipped) result.skipped = [];
                             result.skipped.push(doctype);
                             return resolve();
@@ -980,6 +991,7 @@ class Sippol extends WebRobot {
                                 })
                             ;
                         } else {
+                            debug('%s: %s not found!', w.getRes(0), docs[doctype]);
                             resolve();
                         }
                     })],
@@ -994,7 +1006,7 @@ class Sippol extends WebRobot {
     uploadDocFile(el, file, index) {
         return Work.works([
             [w => this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))],
-            [w => Promise.resolve(console.log('Uploading document %s', file)),
+            [w => Promise.resolve(debug('uploading document %s', file)),
                 w => index < w.getRes(0).length],
             [w => w.getRes(0)[index].sendKeys(file),
                 w => index < w.getRes(0).length],
@@ -1012,7 +1024,7 @@ class Sippol extends WebRobot {
                                     if (ctime - stime <= this.updelay) {
                                         setTimeout(f, 100);
                                     } else {
-                                        console.log('Upload for %s timed out!', file);
+                                        debug('upload for %s timed out!', file);
                                         resolve(false);
                                     }
                                 }

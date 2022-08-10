@@ -100,8 +100,8 @@ class SippolBridge {
             return this.state;
         }
         return this.do([
-            w => this.waitUntilReady(),
-            w => Promise.resolve(f()),
+            [w => this.waitUntilReady()],
+            [w => Promise.resolve(f())],
         ]);
     }
 
@@ -132,9 +132,9 @@ class SippolBridge {
 
     do(theworks, status) {
         const works = [
-            w => this.sippol.start(),
-            w => this.sippol.showData(status),
-            w => this.sippol.sleep(this.sippol.opdelay),
+            [w => this.sippol.start()],
+            [w => this.sippol.showData(status)],
+            [w => this.sippol.sleep(this.sippol.opdelay)],
         ];
         if (Array.isArray(theworks)) {
             Array.prototype.push.apply(works, theworks);
@@ -144,8 +144,8 @@ class SippolBridge {
         }
         return Work.works(works, {
             done: () => Work.works([
-                w => this.sippol.stop(),
-                w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay)),
+                [w => this.sippol.stop()],
+                [w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay))],
             ])
         });
     }
@@ -158,9 +158,9 @@ class SippolBridge {
 
     getPenerima(penerima) {
         return Work.works([
-            w => this.sippol.filterData(penerima, this.sippol.DATA_PENERIMA),
-            w => this.sippol.sleep(this.sippol.opdelay),
-            w => this.sippol.fetchData(),
+            [w => this.sippol.filterData(penerima, this.sippol.DATA_PENERIMA)],
+            [w => this.sippol.sleep(this.sippol.opdelay)],
+            [w => this.sippol.fetchData()],
         ]);
     }
 
@@ -210,7 +210,7 @@ class SippolBridge {
         const jumlah = queue.getMappedData('rincian.jumlah');
         const untuk = queue.getMappedData('spp.untuk');
         return this.do([
-            w => new Promise((resolve, reject) => {
+            [w => new Promise((resolve, reject) => {
                 this.getPenerima(penerima)
                     .then(items => {
                         matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
@@ -244,8 +244,8 @@ class SippolBridge {
                     })
                     .catch(err => reject(err))
                 ;
-            }),
-            w => new Promise((resolve, reject) => {
+            })],
+            [w => new Promise((resolve, reject) => {
                 if (!id) {
                     this.sippol.createSpp(queue.data)
                         .then(() => resolve())
@@ -257,8 +257,8 @@ class SippolBridge {
                         .catch(err => reject(err))
                     ;
                 }
-            }),
-            w => new Promise((resolve, reject) => {
+            })],
+            [w => new Promise((resolve, reject) => {
                 this.getPenerima(penerima)
                     .then(items => {
                         matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
@@ -270,28 +270,28 @@ class SippolBridge {
                     })
                     .catch(err => reject(err))
                 ;
-            }),
+            })],
         ]);
     }
 
     listSpp(queue) {
         return Work.works([
-            w => this.list(queue.data),
-            w => new Promise((resolve, reject) => {
+            [w => this.list(queue.data)],
+            [w => new Promise((resolve, reject) => {
                 const items = w.getRes(0);
                 const matches = this.filterItems(items, {year: queue.data.year});
                 if (matches.length && queue.callback) {
                     this.notifyItems(matches, queue.callback);
                 }
                 resolve(matches);
-            }),
+            })],
         ]);
     }
 
     downloadSpp(queue) {
         const downloaddir = this.sippol.options.downloaddir;
         return Work.works([
-            w => new Promise((resolve, reject) => {
+            [w => new Promise((resolve, reject) => {
                 fs.readdir(downloaddir, {withFileTypes: true}, (err, files) => {
                     if (err) return reject(err);
                     files.forEach(file => {
@@ -301,12 +301,12 @@ class SippolBridge {
                     });
                     resolve();
                 });
-            }),
-            w => this.list(Object.assign({
+            })],
+            [w => this.list(Object.assign({
                 mode: this.sippol.FETCH_DOWNLOAD,
                 status: this.sippol.status.SP2D_CAIR
-            }, queue.data)),
-            w => new Promise((resolve, reject) => {
+            }, queue.data))],
+            [w => new Promise((resolve, reject) => {
                 const items = w.getRes(1);
                 if (items.length && queue.callback) {
                     this.processItemsWithLimit(items, part => {
@@ -331,53 +331,51 @@ class SippolBridge {
                     });
                 }
                 resolve(items);
-            }),
+            }), w => w.getRes(1)],
         ]);
     }
 
     uploadDocs(queue) {
         let result;
-        const works = [];
         const docs = {};
-        const mergedocs = {};
+        const merged = {};
         const doctmpdir = path.join(this.sippol.workdir, 'doctmp');
         const docfname = (docname) => {
             return path.join(doctmpdir, queue.data.Id + '_' + docname.toLowerCase() + '.pdf');
         }
-        // save documents to file
-        if (this.docs) {
-            Object.keys(this.docs).forEach((doctype) => {
-                works.push(w => new Promise((resolve, reject) => {
-                    const docfilename = docfname(doctype);
-                    if (!fs.existsSync(doctmpdir)) fs.mkdirSync(doctmpdir);
-                    if (fs.existsSync(docfilename)) fs.unlinkSync(docfilename);
-                    this.saveDoc(docfilename, queue.data[doctype])
-                        .then((filename) => {
-                            let docgroup = this.docs[doctype];
+        return this.do([
+            // save documents to file
+            [w => new Promise((resolve, reject) => {
+                const q = new Queue(Object.keys(this.docs), doctype => {
+                    const filename = docfname(doctype);
+                    Work.works([
+                        [w => Promise.resolve(fs.mkdirSync(doctmpdir)), w => !fs.existsSync(doctmpdir)],
+                        [w => Promise.resolve(fs.unlinkSync(filename)), w => fs.existsSync(filename)],
+                        [w => this.saveDoc(filename, queue.data[doctype])],
+                        [w => new Promise((resolve, reject) => {
+                            const docgroup = this.docs[doctype];
                             if (typeof docgroup == 'string') {
-                                if (!mergedocs[docgroup]) {
-                                    mergedocs[docgroup] = [];
+                                if (!merged[docgroup]) {
+                                    merged[docgroup] = [];
                                 }
-                                mergedocs[docgroup].push(filename);
+                                merged[docgroup].push(filename);
                             } else {
                                 docs[doctype] = filename;
                             }
                             resolve();
-                        })
-                        .catch(() => resolve())
-                    ;
-                }));
-            });
-        }
-        // merge docs if necessary
-        works.push(w => new Promise((resolve, reject) => {
-            if (mergedocs.length == 0) {
-                resolve();
-            } else {
+                        }), w => w.getRes(2)],
+                    ])
+                    .then(() => q.next())
+                    .catch(err => reject(err));
+                });
+                q.once('done', () => resolve());
+            })],
+            // merge docs if necessary
+            [w => new Promise((resolve, reject) => {
                 const merge = require('easy-pdf-merge');
-                const q = new Queue(Object.keys(mergedocs), (docgroup) => {
+                const q = new Queue(Object.keys(merged), docgroup => {
                     const docfilename = docfname(docgroup.toLowerCase());
-                    merge(mergedocs[docgroup], docfilename, err => {
+                    merge(merged[docgroup], docfilename, err => {
                         if (err) {
                             console.error(err);
                         } else {
@@ -387,65 +385,69 @@ class SippolBridge {
                     });
                 });
                 q.once('done', () => resolve());
-            }
-        }));
-        // filter to speed up
-        works.push(w => new Promise((resolve, reject) => {
-            const term = queue.data.term ? queue.data.term : queue.data.info;
-            if (!term) return resolve();
-            this.sippol.filterData(term, this.sippol.DATA_PENERIMA)
-                .then(() => resolve())
-                .catch(() => {
-                    this.sippol.resetFilter()
-                        .then(() => resolve())
-                        .catch(err => reject(err))
-                    ;
-                })
-            ;
-        }));
-        // upload docs
-        works.push(w => new Promise((resolve, reject) => {
-            this.sippol.uploadDocs(queue.data.Id, docs)
-                .then(res => {
-                    result = res;
-                    if (res && queue.callback) {
-                        const callbackQueue = SippolQueue.createCallbackQueue({Id: queue.data.Id, docs: res}, queue.callback);
-                        SippolQueue.addQueue(callbackQueue);
+            })],
+            // filter to speed up
+            [w => new Promise((resolve, reject) => {
+                const term = queue.data.term ? queue.data.term : queue.data.info;
+                if (!term) return resolve();
+                this.sippol.filterData(term, this.sippol.DATA_PENERIMA)
+                    .then(() => resolve())
+                    .catch(() => {
+                        this.sippol.resetFilter()
+                            .then(() => resolve())
+                            .catch(err => reject(err))
+                        ;
+                    })
+                ;
+            })],
+            // wait a little bit
+            [w => this.sippol.sleep(this.sippol.opdelay)],
+            // upload docs
+            [w => new Promise((resolve, reject) => {
+                this.sippol.uploadDocs(queue.data.Id, docs)
+                    .then(res => {
+                        result = res;
+                        if (res && queue.callback) {
+                            const callbackQueue = SippolQueue.createCallbackQueue({Id: queue.data.Id, docs: res}, queue.callback);
+                            SippolQueue.addQueue(callbackQueue);
+                        }
+                        resolve();
+                    })
+                    .catch(err => {
+                        result = err;
+                        resolve();
+                    })
+                ;
+            })],
+            // cleanup files
+            [w => new Promise((resolve, reject) => {
+                const files = [];
+                Array.prototype.push.apply(files, Object.values(docs));
+                Object.values(merged).forEach(docfiles => {
+                    Array.prototype.push.apply(files, docfiles);
+                });
+                files.forEach(file => {
+                    if (fs.existsSync(file)) {
+                        fs.unlinkSync(file);
                     }
-                    resolve();
-                })
-                .catch(err => {
-                    result = err;
-                    resolve();
-                })
-            ;
-        }));
-        // cleanup files
-        works.push(w => new Promise((resolve, reject) => {
-            const files = [];
-            Array.prototype.push.apply(files, Object.values(docs));
-            Object.values(mergedocs).forEach((docfiles) => {
-                Array.prototype.push.apply(files, docfiles);
-            });
-            files.forEach((file) => {
-                if (fs.existsSync(file)) {
-                    fs.unlinkSync(file);
-                }
-            });
-            resolve(result);
-        }));
-        return this.do(works);
+                });
+                resolve(result);
+            })],
+        ]);
     }
 
     saveDoc(filename, data) {
         return new Promise((resolve, reject) => {
             if (Buffer.isBuffer(data)) {
                 fs.writeFile(filename, new Uint8Array(data), err => {
-                    if (err) return reject(err);
-                    resolve(filename);
+                    if (err) {
+                        console.error(err);
+                        return resolve(false);
+                    }
+                    resolve(true);
                 });
             } else {
-                reject();
+                resolve(false);
             }
         });
     }

@@ -33,11 +33,11 @@ const SippolNotifier = require('./notifier');
 
 Cmd.addBool('help', 'h', 'Show program usage').setAccessible(false);
 Cmd.addVar('config', 'c', 'Set configuration file', 'filename');
-Cmd.addVar('port', 'p', 'Set web server port to listen', 'port');
+Cmd.addVar('port', 'p', 'Set server port to listen', 'port');
 Cmd.addVar('url', '', 'Set SIPPOL url', 'url');
 Cmd.addVar('username', 'u', 'Set login username', 'username');
 Cmd.addVar('password', 'p', 'Set login password', 'password');
-Cmd.addVar('profile', '', 'Use conncetion profile', 'profile');
+Cmd.addVar('profile', '', 'Use profile for operation', 'profile');
 
 if (!Cmd.parse() || (Cmd.get('help') && usage())) {
     process.exit();
