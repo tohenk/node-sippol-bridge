@@ -45,6 +45,10 @@ class Sippol extends WebRobot {
     SORT_ASCENDING = 1
     SORT_DESCENDING = 2
 
+    DATE_MATCH = 1
+    DATE_BEFORE = 2
+    DATE_AFTER = 3
+
     FETCH_DATA = 1
     FETCH_DOWNLOAD = 2
 
@@ -136,8 +140,7 @@ class Sippol extends WebRobot {
         const dtpart = value.split('/');
         if (dtpart.length == 3) {
             if (dtpart[2].length < 4) {
-                const now = new Date();
-                dtpart[2] = parseInt(now.getFullYear().toString().substr(0, 2) + dtpart[2]);
+                dtpart[2] = new Date().getFullYear().toString().substring(0, 2) + dtpart[2];
             }
             value = new Date(parseInt(dtpart[2]), parseInt(dtpart[1]) - 1, parseInt(dtpart[0]));
         }
@@ -181,10 +184,10 @@ class Sippol extends WebRobot {
 
     start() {
         return Work.works([
-            w => this.open(),
-            w => this.sleep(),
-            w => this.login(),
-            w => this.isLoggedIn(),
+            [w => this.open()],
+            [w => this.sleep()],
+            [w => this.login()],
+            [w => this.isLoggedIn()],
         ]);
     }
 
@@ -228,14 +231,21 @@ class Sippol extends WebRobot {
         });
     }
 
+    showJenis(jenis) {
+        return Work.works([
+            [w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[6]/button'))],
+            [w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.js=js"][contains(text(),"_X_")]'.replace(/_X_/, jenis)))],
+        ]);
+    }
+
     showData(status) {
         status = status || this.status.SEMUA;
         if (Object.values(this.status).indexOf(status) < 0) {
             return Promise.reject(new Error('Status of ' + status + ' is unknown!'));
         }
         return Work.works([
-            w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[3]/button[@id="dir-button"]')),
-            w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.dokStatus=\'_X_\'"]'.replace(/_X_/, status))),
+            [w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[3]/button'))],
+            [w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.dokStatus=\'_X_\'"]'.replace(/_X_/, status)))],
         ]);
     }
 
@@ -257,10 +267,10 @@ class Sippol extends WebRobot {
 
     resetFilter() {
         return Work.works([
-            w => this.filterData(null, this.DATA_SPP),
-            w => this.filterData(null, this.DATA_SPM),
-            w => this.filterData(null, this.DATA_SP2D),
-            w => this.filterData(null, this.DATA_PENERIMA),
+            [w => this.filterData(null, this.DATA_SPP)],
+            [w => this.filterData(null, this.DATA_SPM)],
+            [w => this.filterData(null, this.DATA_SP2D)],
+            [w => this.filterData(null, this.DATA_PENERIMA)],
         ]);
     }
 
@@ -270,8 +280,8 @@ class Sippol extends WebRobot {
             return Promise.reject('Invalid sort type: ' + type);
         }
         return Work.works([
-            w => this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m))),
-            w => this.ensureSorted(w.getRes(0), dir),
+            [w => this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m)))],
+            [w => this.ensureSorted(w.getRes(0), dir)],
         ]);
     }
 
@@ -302,10 +312,10 @@ class Sippol extends WebRobot {
                 xclass = xclass.substr(xclass.indexOf(' ')).trim();
                 switch (dir) {
                     case this.SORT_ASCENDING:
-                        sorted = xclass == 'glyphicon-sort-by-attribute';
+                        sorted = xclass == 'glyphicon-sort-by-attributes';
                         break;
                     case this.SORT_DESCENDING:
-                        sorted = xclass == 'glyphicon-sort-by-attribute-alt';
+                        sorted = xclass == 'glyphicon-sort-by-attributes-alt';
                         break;
                 }
                 resolve(sorted);
@@ -316,15 +326,15 @@ class Sippol extends WebRobot {
 
     findPager(pager) {
         return Work.works([
-            w => this.findElement(pager),
-            w => w.getRes(0).isDisplayed(),
-            w => new Promise((resolve, reject) => {
+            [w => this.findElement(pager)],
+            [w => w.getRes(0).isDisplayed()],
+            [w => new Promise((resolve, reject) => {
                 if (w.getRes(1)) {
                     resolve(w.getRes(0))
                 } else {
                     reject();
                 }
-            }),
+            })],
         ], {alwaysResolved: true});
     }
 
@@ -391,7 +401,7 @@ class Sippol extends WebRobot {
         const done = options.done;
         const pager = options.pager;
         if (options.click == undefined) options.click = false;
-        if (options.wait == undefined) options.wait = true;
+        if (options.wait == undefined) options.wait = false;
         if (options.visible == undefined) options.visible = false;
         if (options.direction == undefined) options.direction = 1;
         return new Promise((resolve, reject) => {
@@ -464,12 +474,12 @@ class Sippol extends WebRobot {
                                         const items = works(el);
                                         if (options.click) {
                                             if (options.parentClick) {
-                                                items.push(() => el.findElement(By.xpath('./..')).click());
+                                                items.push([x => el.findElement(By.xpath('./..')).click()]);
                                             } else {
-                                                items.push(() => el.click());
+                                                items.push([x => el.click()]);
                                             }
                                         }
-                                        if (options.wait) items.push(() => this.sleep(this.delay));
+                                        if (options.wait) items.push([x => this.sleep(this.delay)]);
                                         Work.works(items)
                                             .then(() => finishEach(() => q.next()))
                                             .catch(err => {
@@ -583,10 +593,10 @@ class Sippol extends WebRobot {
         works.push([w => this.eachData(
             el => {
                 const mode = options.mode ? options.mode : this.FETCH_DATA;
-                const xworks = this.fetchDataEachWorks(el, options);
+                const op = this.fetchDataEachWorks(el, options);
                 switch (mode) {
                     case this.FETCH_DATA:
-                        xworks.push([x => new Promise((resolve, reject) => {
+                        op.push([x => new Promise((resolve, reject) => {
                             const data = new SippolData();
                             this.retrData(el, data, options.useForm)
                                 .then(okay => {
@@ -595,10 +605,10 @@ class Sippol extends WebRobot {
                                 })
                                 .catch(err => reject(err))
                             ;
-                        })]);
+                        }), x => x.res]);
                         break;
                     case this.FETCH_DOWNLOAD:
-                        xworks.push([x => new Promise((resolve, reject) => {
+                        op.push([x => new Promise((resolve, reject) => {
                             this.saveSpp(el)
                                 .then(res => {
                                     if (res) items.push(res);
@@ -606,10 +616,10 @@ class Sippol extends WebRobot {
                                 })
                                 .catch(err => reject(err))
                             ;
-                        })]);
+                        }), x => x.res]);
                         break;
                 }
-                return xworks;
+                return op;
             },
             () => Promise.resolve(items)
         )]);
@@ -619,11 +629,30 @@ class Sippol extends WebRobot {
     fetchDataWorks(options) {
         const works = [];
         const filters = {spp: this.DATA_SPP, spm: this.DATA_SPM, sp2d: this.DATA_SP2D};
+        let sortkey;
         Object.keys(filters).forEach(key => {
-            if (options[key] instanceof Date) {
-                works.push(() => this.sortData(filters[key], this.SORT_DESCENDING));
+            const value = options[key];
+            let sorted;
+            if (value instanceof Date) {
+                sorted = this.SORT_DESCENDING;
+            } else if (typeof value == 'object' && value.from instanceof Date) {
+                if (value.to instanceof Date) {
+                    sorted = this.SORT_ASCENDING;
+                } else {
+                    sorted = this.SORT_DESCENDING;
+                }
+            }
+            if (sorted) {
+                works.push([w => this.sortData(filters[key], sorted)]);
+                sortkey = key;
             }
         });
+        if (sortkey) {
+            const status = {spp: this.status.SPM, spm: this.status.SP2D, sp2d: this.status.SP2D_CAIR};
+            if (status[sortkey]) {
+                works.unshift([w => this.showData(status[sortkey])]);
+            }
+        }
         return works;
     }
 
@@ -631,34 +660,63 @@ class Sippol extends WebRobot {
         const works = [];
         const filters = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
         Object.keys(filters).forEach(key => {
-            if (options[key] instanceof Date) {
+            const value = options[key];
+            let from, to;
+            if (value instanceof Date) {
+                from = value;
+            } else if (typeof value == 'object' && value.from instanceof Date) {
+                from = value.from;
+                if (value.to instanceof Date) {
+                    to = value.to;
+                }
+            }
+            if (from) {
                 works.push([w => new Promise((resolve, reject) => {
-                    this.fetchDataEachMatch(el, filters[key], options[key])
-                        .then(okay => {
-                            if (!okay) {
-                                reject(new SippolStopError());
-                            } else {
-                                resolve();
+                    this.fetchDataEachMatch(el, filters[key], from, to)
+                        .then(result => {
+                            switch (result) {
+                                case this.DATE_MATCH:
+                                    return resolve(true);
+                                case this.DATE_BEFORE:
+                                    return resolve(false);
+                                default:
+                                    reject(new SippolStopError());
                             }
                         })
                     ;
                 })]);
             }
         });
+        if (!works.length) {
+            works.push([w => Promise.resolve(true)]);
+        }
         return works;
     }
 
-    fetchDataEachMatch(el, filter, since) {
+    fetchDataEachMatch(el, filter, from, to) {
         return Work.works([
             [w => el.findElement(By.xpath('.//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))],
             [w => w.getRes(0).isDisplayed()],
+            [w => Promise.resolve(this.DATE_BEFORE), w => !w.getRes(1)],
             [w => w.getRes(0).getText(), w => w.getRes(1)],
             [w => new Promise((resolve, reject) => {
-                const value = w.getRes(2);
+                const value = w.res;
                 const s = value.split(',');
                 const dt = this.pickDate(s[1], true);
-                resolve(dt >= since);
-            }), w => w.getRes(2)],
+                let result;
+                if (!to) {
+                    result = dt >= from ? this.DATE_MATCH : this.DATE_AFTER;
+                } else {
+                    if (from <= dt && dt <= to) {
+                        result = this.DATE_MATCH;
+                    } else if (dt < from) {
+                        result = this.DATE_BEFORE;
+                    } else {
+                        result = this.DATE_AFTER;
+                    }
+                }
+                resolve(result);
+            }), w => w.res],
         ], {alwaysResolved: true});
     }
 
@@ -672,8 +730,8 @@ class Sippol extends WebRobot {
 
     retrDataFromForm(el, data) {
         return Work.works([
-            w => this.clickEditSppButton(el),
-            w => this.getValuesFromSppForm(data),
+            [w => this.clickEditSppButton(el)],
+            [w => this.getValuesFromSppForm(data)],
         ]);
     }
 
@@ -768,17 +826,17 @@ class Sippol extends WebRobot {
 
     retrDataIdFromRow(el) {
         return Work.works([
-            w => el.findElement(By.xpath('./td[2]')),
-            w => w.getRes(0).getAttribute('title'),
-            w => Promise.resolve(this.pickPid(w.getRes(1))),
+            [w => el.findElement(By.xpath('./td[2]'))],
+            [w => w.getRes(0).getAttribute('title')],
+            [w => Promise.resolve(this.pickPid(w.getRes(1)))],
         ]);
     }
 
     retrDataStatusFromRow(el) {
         return Work.works([
-            w => el.findElement(By.xpath('./td[3]/span[@ng-show="spp.pkSppFlag!=0"]')),
-            w => w.getRes(0).getAttribute('class'),
-            w => Promise.resolve(w.getRes(1).indexOf('glyphicon-remove') < 0),
+            [w => el.findElement(By.xpath('./td[3]/span[@ng-show="spp.pkSppFlag!=0"]'))],
+            [w => w.getRes(0).getAttribute('class')],
+            [w => Promise.resolve(w.getRes(1).indexOf('glyphicon-remove') < 0)],
         ]);
     }
 
@@ -805,9 +863,9 @@ class Sippol extends WebRobot {
 
     createSpp(data) {
         return Work.works([
-            w => this.clickAddSppButton(),
-            w => this.sleep(this.opdelay),
-            w => this.fillSppForm(data),
+            [w => this.clickAddSppButton()],
+            [w => this.sleep(this.opdelay)],
+            [w => this.fillSppForm(data)],
         ]);
     }
 

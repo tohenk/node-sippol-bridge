@@ -133,6 +133,7 @@ class SippolBridge {
     do(theworks, status) {
         const works = [
             [w => this.sippol.start()],
+            [w => this.sippol.showJenis('LS')],
             [w => this.sippol.showData(status)],
             [w => this.sippol.sleep(this.sippol.opdelay)],
         ];

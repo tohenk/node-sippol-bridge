@@ -334,11 +334,34 @@ class App {
 
     getDateForOptions(options, data) {
         ['spp', 'spm', 'sp2d'].forEach(key => {
-            if (data[key] && (
-                !isNaN(data[key]) || (typeof data[key] == 'string' && data[key].indexOf('T') > 0)
-                )
-            ) {
-                options[key] = new Date(data[key]);
+            const value = data[key];
+            if (value) {
+                let values;
+                if (!isNaN(value)) {
+                    values = new Date(value);
+                }
+                if (typeof value == 'string') {
+                    const dates = value.split('~');
+                    dates.forEach(dt => {
+                        try {
+                            const d = new Date(dt);
+                            if (!values) {
+                                values = {};
+                            }
+                            if (!values.from) {
+                                values.from = d;
+                            } else {
+                                values.to = d;
+                            }
+                        }
+                        catch (e) {
+                            console.error(e);
+                        }
+                    });
+                }
+                if (values) {
+                    options[key] = values;
+                }
             }
         });
     }
