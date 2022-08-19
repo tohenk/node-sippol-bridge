@@ -489,6 +489,7 @@ class Sippol extends WebRobot {
                                                     next = false;
                                                     q.done();
                                                 } else {
+                                                    debug('got error %s', err);
                                                     if (err instanceof Error) throw err;
                                                 }
                                             })
