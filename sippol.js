@@ -195,6 +195,36 @@ class Sippol extends WebRobot {
         return this.close();
     }
 
+    waitLoader() {
+        return new Promise((resolve, reject) => {
+            let shown = false;
+            const f = () => {
+                Work.works([
+                    [w => this.findElements(By.id('loading-bar-spinner'))],
+                    [w => new Promise((resolve, reject) => {
+                        let wait = true;
+                        if (shown && w.res.length == 0) {
+                            wait = false;
+                        }
+                        if (w.res.length == 1 && !shown) {
+                            shown = true;
+                        }
+                        resolve(wait);
+                    })],
+                ])
+                .then(result => {
+                    if (result) {
+                        setTimeout(f, !shown ? 250 : 500);
+                    } else {
+                        resolve();
+                    }
+                })
+                .catch(err => reject(err));
+            }
+            f();
+        });
+    }
+
     login() {
         return Work.works([
             [w => this.isLoggedIn(true)],
@@ -231,14 +261,19 @@ class Sippol extends WebRobot {
         });
     }
 
-    showJenis(jenis) {
+    showJenis(jenis, wait = true) {
         return Work.works([
-            [w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[6]/button'))],
-            [w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.js=js"][contains(text(),"_X_")]'.replace(/_X_/, jenis)))],
+            [w => this.findElement(By.xpath('//div[contains(@class,"btn-toolbar")]/div[6]/button'))],
+            [w => this.getText([By.xpath('.//span[@ng-show="vm.js"]')], w.getRes(0))],
+            [w => Promise.resolve(w.getRes(1)[0].endsWith(jenis))],
+            [w => w.getRes(0).click(), w => !w.getRes(2)],
+            [w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.js=js"][contains(text(),"_X_")]'.replace(/_X_/, jenis))),
+                w => !w.getRes(2)],
+            [w => this.waitLoader(), w => !w.getRes(2) && wait],
         ]);
     }
 
-    showData(status) {
+    showData(status, wait = true) {
         status = status || this.status.SEMUA;
         if (Object.values(this.status).indexOf(status) < 0) {
             return Promise.reject(new Error('Status of ' + status + ' is unknown!'));
@@ -246,11 +281,15 @@ class Sippol extends WebRobot {
         return Work.works([
             [w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[3]/button'))],
             [w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.dokStatus=\'_X_\'"]'.replace(/_X_/, status)))],
+            [w => this.waitLoader(), w => wait],
         ]);
     }
 
-    refreshData() {
-        return this.waitAndClick(By.xpath('//button[@ng-click="vm.loadAll()"]'));
+    refreshData(wait = true) {
+        return Work.works([
+            [w => this.waitAndClick(By.xpath('//button[@ng-click="vm.loadAll()"]'))],
+            [w => this.waitLoader(), w => wait],
+        ]);
     }
 
     filterData(data, type = this.DATA_SPM) {
@@ -349,10 +388,12 @@ class Sippol extends WebRobot {
             [w => w.getRes(0)[0].findElement(By.xpath('./..'))],
             // check for disabled class
             [w => w.getRes(1).getAttribute('class')],
+            // should it be clicked
+            [w => Promise.resolve(w.getRes(2) && w.getRes(2).indexOf('disabled') < 0)],
             // click it if it's not disabled
-            [w => w.getRes(0)[0].click(), w => w.getRes(2) && w.getRes(2).indexOf('disabled') < 0],
+            [w => w.getRes(0)[0].click(), w => w.getRes(3)],
             // wait
-            [w => this.sleep(), w => options.wait],
+            [w => this.waitLoader(), w => w.getRes(3) && options.wait],
             // done
             [w => new Promise((resolve, reject) => {
                 // no result
