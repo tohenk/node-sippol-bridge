@@ -185,7 +185,7 @@ class Sippol extends WebRobot {
     start() {
         return Work.works([
             [w => this.open()],
-            [w => this.sleep()],
+            [w => this.waitLoader()],
             [w => this.login()],
             [w => this.isLoggedIn()],
         ]);
@@ -198,6 +198,7 @@ class Sippol extends WebRobot {
     waitLoader() {
         return new Promise((resolve, reject) => {
             let shown = false;
+            let t = Date.now();
             const f = () => {
                 Work.works([
                     [w => this.findElements(By.id('loading-bar-spinner'))],
@@ -208,6 +209,10 @@ class Sippol extends WebRobot {
                         }
                         if (w.res.length == 1 && !shown) {
                             shown = true;
+                        }
+                        // is timed out
+                        if (!shown && Date.now() - t > this.wait) {
+                            wait = false;
                         }
                         resolve(wait);
                     })],
