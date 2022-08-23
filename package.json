@@ -7,7 +7,7 @@
   "license": "MIT",
   "dependencies": {
     "@ntlab/ntlib": "^2.0.0",
-    "@ntlab/webrobot": "^1.4.6",
+    "@ntlab/webrobot": "^1.4.7",
     "@ntlab/work": "^1.0.4",
     "debug": "^4.3.4",
     "easy-pdf-merge": "^0.2.6",

@@ -911,7 +911,7 @@ class Sippol extends WebRobot {
     createSpp(data) {
         return Work.works([
             [w => this.clickAddSppButton()],
-            [w => this.sleep(this.opdelay)],
+            [w => this.waitLoader()],
             [w => this.fillSppForm(data)],
         ]);
     }
@@ -920,7 +920,7 @@ class Sippol extends WebRobot {
         return Work.works([
             [w => this.locateData(id)],
             [w => this.clickEditSppButton(w.getRes(0)), w => w.getRes(0)],
-            [w => this.sleep(this.opdelay), w => w.getRes(0)],
+            [w => this.waitLoader(), w => w.getRes(0)],
             [w => this.fillSppForm(data), w => w.getRes(0)],
             [w => Promise.reject('SPP with id ' + id + ' is not found!'), w => !w.getRes(0)],
         ]);
