@@ -151,7 +151,7 @@ class SippolDequeue extends EventEmitter {
     }
 
     getStatus() {
-        const status = Object.assign({}, this.info, {
+        const status = Object.assign({}, this.buildInfo(this.info), {
             time: this.time.toString(),
             total: this.queues.length,
             queue: this.queue.queues.length,
@@ -173,6 +173,18 @@ class SippolDequeue extends EventEmitter {
             }
         }
         return status;
+    }
+
+    buildInfo(info) {
+        const result = {};
+        Object.keys(info).forEach(k => {
+            let v = info[k];
+            if (typeof v == 'function') {
+                v = v();
+            }
+            result[k] = v;
+        });
+        return result;
     }
 }
 

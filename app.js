@@ -111,7 +111,7 @@ class App {
 
     createDequeuer() {
         this.dequeue = SippolQueue.createDequeuer();
-        this.dequeue.setInfo({version: this.VERSION});
+        this.dequeue.setInfo({version: this.VERSION, ready: () => this.ready ? 'Yes' : 'No'});
         this.dequeue
             .on('queue', queue => this.handleNotify(queue))
             .on('queue-done', queue => this.handleNotify(queue))
@@ -179,8 +179,8 @@ class App {
         this.startTime = Date.now();
         let interval = setInterval(() => {
             let now = Date.now();
-            let isReady = this.readyCount() == this.bridges.length;
-            if (isReady) {
+            this.ready = this.readyCount() == this.bridges.length;
+            if (this.ready) {
                 clearInterval(interval);
                 console.log('Readiness checking is done...');
             } else {
