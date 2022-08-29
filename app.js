@@ -168,7 +168,13 @@ class App {
                     this.dequeue.setConsumer(this);
                     console.log('Queue processing is ready...');
                 })
-                .catch(err => console.log(err))
+                .catch(err => {
+                    if (err) {
+                        console.error('Self test reaches an error: %s!', err);
+                    } else {
+                        console.error('Self test reaches an error!');
+                    }
+                })
             ;
             this.checkReadiness();
         });
@@ -354,8 +360,8 @@ class App {
                                 values.to = d;
                             }
                         }
-                        catch (e) {
-                            console.error(e);
+                        catch (err) {
+                            console.error('Unable to parse date: %s!', err);
                         }
                     });
                 }
@@ -467,6 +473,9 @@ class App {
             this.createDequeuer();
             this.createBridges();
             this.createServer();
+            process.on('uncaughtExceptionMonitor', (err, origin) => {
+                console.error('Got error %s: %s!', origin, err);
+            });
             return true;
         }
     }

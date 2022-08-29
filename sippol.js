@@ -244,7 +244,7 @@ class Sippol extends WebRobot {
                     By.xpath('//button[@data-translate="login.form.button"]')
                 ),
                 w => !w.getRes(0)],
-            [w => this.sleep(this.wait),
+            [w => this.waitLoader(),
                 w => !w.getRes(0)],
         ]);
     }
@@ -440,161 +440,151 @@ class Sippol extends WebRobot {
         ]);
     }
 
-    each(options) {
-        const check = options.check;
-        const filter = options.filter;
-        const works = options.works;
-        const done = options.done;
-        const pager = options.pager;
-        if (options.click == undefined) options.click = false;
-        if (options.wait == undefined) options.wait = false;
-        if (options.visible == undefined) options.visible = false;
-        if (options.direction == undefined) options.direction = 1;
-        return new Promise((resolve, reject) => {
-            let retval;
-            let page = 1;
-            let pages = 1;
-            const run = () => {
-                Work.works([
-                    [w => this.getDriver().findElements(check)],
-                    [w => new Promise((resolve, reject) => {
-                        // handler to go to next page or resolve when no more pages
-                        const nextPageOrResolve = (next = true) => {
-                            if (next && pager) {
-                                page += options.direction;
-                                debug('next page %s', page);
-                                if ((options.direction > 0 && page > pages) || (options.direction < 0 && page < 1)) {
-                                    // if more than 1 page, go back to first page if needed
-                                    if (pages > 1 && options.resetPage) {
-                                        this.navigatePage(pager, 'first')
-                                            .then(() => {
-                                                debug('each resolved with %s', retval);
-                                                resolve(retval);
-                                            })
-                                        ;
-                                    } else {
+    eachrun(data) {
+        return Work.works([
+            // get items
+            [w => this.getDriver().findElements(data.selector)],
+            // apply filter
+            [w => data.filter(w.getRes(0)), w => typeof data.filter == 'function'],
+            // filtered items
+            [w => Promise.resolve(typeof filter == 'function' ? w.getRes(1) : w.getRes(0))],
+            // process items
+            [w => new Promise((resolve, reject) => {
+                const result = {items: w.res, next: true};
+                // handler to finish each iteration
+                const finishRun = next => {
+                    if (typeof data.done == 'function') {
+                        data.done()
+                            .then(res => {
+                                debug('finish iteration with %s', res);
+                                result.retval = res;
+                                next();
+                            })
+                            .catch(err => {
+                                debug('finish iteration with error %s', err);
+                                reject(err);
+                            })
+                        ;
+                    } else {
+                        next();
+                    }
+                }
+                // process each elements
+                if (result.items.length) {
+                    const q = new Queue(result.items, el => {
+                        const works = data.works(el);
+                        if (data.click) {
+                            if (data.parentClick) {
+                                works.push([x => el.findElement(By.xpath('./..')).click()]);
+                            } else {
+                                works.push([x => el.click()]);
+                            }
+                        }
+                        if (data.wait) {
+                            works.push([x => this.sleep(this.delay)]);
+                        }
+                        Work.works([
+                            [x => el.isDisplayed(), x => data.visible],
+                            [x => Promise.resolve(!data.visible || getRes(0))],
+                            [x => Work.works(works), x => x.getRes(1)],
+                        ])
+                        .then(() => finishRun(() => q.next()))
+                        .catch(err => {
+                            // is iteration stopped?
+                            if (err instanceof SippolStopError) {
+                                debug('got stop signal');
+                                result.next = false;
+                                q.done();
+                            } else {
+                                if (err) {
+                                    console.error('Each process got error: %s!', err);
+                                }
+                                if (data.continueOnError) {
+                                    finishRun(() => q.next());
+                                } else {
+                                    reject(err);
+                                }
+                            }
+                        });
+                    });
+                    q.once('done', () => resolve(result));
+                } else {
+                    finishRun(() => resolve(result))
+                }
+            })],
+        ]);
+    }
+
+    each(data) {
+        if (data.click == undefined) data.click = false;
+        if (data.wait == undefined) data.wait = false;
+        if (data.visible == undefined) data.visible = false;
+        if (data.direction == undefined) data.direction = 1;
+        return Work.works([
+            // get pages
+            [w => this.getPages(data.pager, data.direction), w => data.pager],
+            [w => Promise.resolve(data.pages = data.pager ? w.getRes(0) : 1)],
+            [w => Promise.resolve(data.page = data.direction > 0 ? 1 : data.pages)],
+            // process items
+            [w => new Promise((resolve, reject) => {
+                let retval;
+                // handler to go to next page or resolve when no more pages
+                const nextPageOrResolve = (next = true) => {
+                    if (next && data.pager) {
+                        data.page += data.direction;
+                        debug('next page %s', data.page);
+                        if ((data.direction > 0 && data.page > data.pages) || (data.direction < 0 && data.page < 1)) {
+                            // if more than 1 page, go back to first page if needed
+                            if (data.pages > 1 && data.resetPage) {
+                                this.navigatePage(data.pager, 'first')
+                                    .then(() => {
                                         debug('each resolved with %s', retval);
                                         resolve(retval);
-                                    }
-                                } else {
-                                    this.navigatePage(pager, page, {returnPage: true})
-                                        .then(el => {
-                                            if (el) {
-                                                run();
-                                            } else {
-                                                debug('each resolved with %s', retval);
-                                                resolve(retval);
-                                            }
-                                        })
-                                    ;
-                                }
+                                    })
+                                ;
                             } else {
                                 debug('each resolved with %s', retval);
                                 resolve(retval);
                             }
-                        }
-                        // handler to finish each iteration
-                        const finishEach = next => {
-                            if (typeof done == 'function') {
-                                done()
-                                    .then(res => {
-                                        debug('finish iteration with %s', res);
-                                        retval = res;
-                                        next();
-                                    })
-                                    .catch(err => {
-                                        debug('finish iteration with error %s', err);
-                                        if (err instanceof Error) throw err;
-                                    })
-                                ;
-                            } else {
-                                next();
-                            }
-                        }
-                        // handler to process each elements
-                        const doit = (elements, next = true) => {
-                            // check if elements exists
-                            if (elements.length) {
-                                const q = new Queue(elements, el => {
-                                    const f = () => {
-                                        const items = works(el);
-                                        if (options.click) {
-                                            if (options.parentClick) {
-                                                items.push([x => el.findElement(By.xpath('./..')).click()]);
-                                            } else {
-                                                items.push([x => el.click()]);
-                                            }
-                                        }
-                                        if (options.wait) items.push([x => this.sleep(this.delay)]);
-                                        Work.works(items)
-                                            .then(() => finishEach(() => q.next()))
-                                            .catch(err => {
-                                                // is iteration stopped?
-                                                if (err instanceof SippolStopError) {
-                                                    debug('got stop signal');
-                                                    next = false;
-                                                    q.done();
-                                                } else {
-                                                    debug('got error %s', err);
-                                                    if (err instanceof Error) throw err;
-                                                }
-                                            })
-                                        ;
-                                    }
-                                    if (options.visible) {
-                                        el.isDisplayed().then(visible => {
-                                            if (visible) {
-                                                f();
-                                            } else {
-                                                q.next();
-                                            }
-                                        });
-                                    } else {
-                                        f();
-                                    }
-                                });
-                                q.once('done', () => nextPageOrResolve(next));
-                            } else {
-                                // no elements found
-                                if (pager) {
-                                    nextPageOrResolve();
-                                } else {
-                                    finishEach(() => resolve(retval));
-                                }
-                            }
-                        }
-                        // apply filter
-                        if (typeof filter == 'function') {
-                            filter(w.getRes(0))
-                                .then(items => doit(items, false))
-                                .catch(err => reject(err))
-                            ;
                         } else {
-                            doit(w.getRes(0));
+                            this.navigatePage(data.pager, data.page, {returnPage: true})
+                                .then(page => {
+                                    if (page) {
+                                        run();
+                                    } else {
+                                        debug('each resolved with %s', retval);
+                                        resolve(retval);
+                                    }
+                                })
+                            ;
                         }
-                    })],
-                ])
-                .then(res => resolve(res))
-                .catch(err => reject(err));
-            }
-            if (pager) {
-                this.getPages(pager, options.direction)
-                    .then(result => {
-                        pages = result;
-                        page = options.direction > 0 ? 1 : pages;
-                        run();
-                    })
-                ;
-            } else {
+                    } else {
+                        debug('each resolved with %s', retval);
+                        resolve(retval);
+                    }
+                }
+                // handler loop
+                const run = () => {
+                    this.eachrun(data)
+                        .then(result => {
+                            if (result.retval != undefined) {
+                                retval = result.retval;
+                            }
+                            nextPageOrResolve(result.next);
+                        })
+                        .catch(err => reject(err))
+                    ;
+                }
+                // run it
                 run();
-            }
-        });
+            })],
+        ]);
     }
 
     eachData(work, done, filter, direction = 1) {
         const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
         return this.each({
-            check: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
+            selector: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
             works: el => work(el),
             done: done,
@@ -622,7 +612,9 @@ class Sippol extends WebRobot {
                             } else {
                                 q.next();
                             }
-                        });
+                        })
+                        .catch(err => reject(err))
+                    ;
                 });
                 q.once('done', () => {
                     resolve(matched);
@@ -730,6 +722,7 @@ class Sippol extends WebRobot {
                                     reject(new SippolStopError());
                             }
                         })
+                        .catch(err => reject(err))
                     ;
                 })]);
             }
@@ -778,6 +771,7 @@ class Sippol extends WebRobot {
     retrDataFromForm(el, data) {
         return Work.works([
             [w => this.clickEditSppButton(el)],
+            [w => this.waitLoader()],
             [w => this.getValuesFromSppForm(data)],
         ]);
     }
@@ -1096,6 +1090,7 @@ class Sippol extends WebRobot {
                                     }
                                     resolve();
                                 })
+                                .catch(err => reject(err))
                             ;
                         } else {
                             debug('%s: %s not found!', w.getRes(0), docs[doctype]);
@@ -1136,6 +1131,7 @@ class Sippol extends WebRobot {
                                     }
                                 }
                             })
+                            .catch(err => reject(err))
                         ;
                     }
                     f();

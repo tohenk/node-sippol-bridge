@@ -327,7 +327,9 @@ class SippolBridge {
                             zip.generateAsync({type: 'nodebuffer'})
                                 .then(stream => {
                                     this.notifyItems({download: stream}, queue.callback);
-                                });
+                                })
+                                .catch(err => reject(err))
+                            ;
                         });
                     });
                 }
@@ -378,7 +380,7 @@ class SippolBridge {
                     const docfilename = docfname(docgroup.toLowerCase());
                     merge(merged[docgroup], docfilename, err => {
                         if (err) {
-                            console.error(err);
+                            console.error('Merge document %s failed with %s!', docfilename, err);
                         } else {
                             docs[docgroup] = docfilename;
                         }
@@ -442,7 +444,7 @@ class SippolBridge {
             if (Buffer.isBuffer(data)) {
                 fs.writeFile(filename, new Uint8Array(data), err => {
                     if (err) {
-                        console.error(err);
+                        console.error('Write file %s failed with %s!', filename, err);
                         return resolve(false);
                     }
                     resolve(true);
