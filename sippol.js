@@ -447,7 +447,7 @@ class Sippol extends WebRobot {
             // apply filter
             [w => data.filter(w.getRes(0)), w => typeof data.filter == 'function'],
             // filtered items
-            [w => Promise.resolve(typeof filter == 'function' ? w.getRes(1) : w.getRes(0))],
+            [w => Promise.resolve(typeof data.filter == 'function' ? w.getRes(1) : w.getRes(0))],
             // process items
             [w => new Promise((resolve, reject) => {
                 const result = {items: w.res, next: true};
