@@ -496,14 +496,17 @@ class Sippol extends WebRobot {
                                 result.next = false;
                                 q.done();
                             } else {
-                                if (err) {
-                                    console.error('Each process got error: %s!', err);
-                                }
-                                if (data.continueOnError) {
-                                    finishRun(() => q.next());
-                                } else {
-                                    reject(err);
-                                }
+                                Work.works([
+                                    [x => Promise.resolve(err && typeof data.info == 'function')],
+                                    [x => data.info(el), x => x.getRes(0)],
+                                    [x => Promise.resolve(console.error('Got error processing %s: %s!', x.getRes(1), err)), x => x.getRes(0)],
+                                ]).then(() => {
+                                    if (data.continueOnError) {
+                                        finishRun(() => q.next());
+                                    } else {
+                                        reject(err);
+                                    }
+                                });
                             }
                         });
                     });
@@ -586,6 +589,7 @@ class Sippol extends WebRobot {
         return this.each({
             selector: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
+            info: el => this.retrDataIdFromRow(el),
             works: el => work(el),
             done: done,
             filter: filter,
@@ -601,7 +605,7 @@ class Sippol extends WebRobot {
                 return [];
             },
             () => Promise.resolve(match),
-            (elements) => new Promise((resolve, reject) => {
+            elements => new Promise((resolve, reject) => {
                 const matched = [];
                 const q = new Queue(elements, el => {
                     this.retrDataIdFromRow(el)
@@ -783,7 +787,7 @@ class Sippol extends WebRobot {
             // get form title
             [w => this.getText([By.id('mySppLabel')], w.getRes(0))],
             // get values
-            [w => this.getFormValues(w.getRes(0), ['noSpp', 'tglSpp', 'noSpm', 'tglSpm', 'noSp2d', 'tglSp2d', 'tglCair',
+            [w => this.getFormValues(w.getRes(0), ['syarat', 'noSpp', 'tglSpp', 'noSpm', 'tglSpm', 'noSp2d', 'tglSp2d', 'tglCair',
                 'penerima', 'alamat', 'npwp', 'kode', 'noKontrak', 'tglKontrak', 'bank', 'bankCab', 'bankRek',
                 'afektasi', 'untuk', 'ket'
             ])],
