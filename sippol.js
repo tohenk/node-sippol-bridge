@@ -147,6 +147,37 @@ class Sippol extends WebRobot {
         return value;
     }
 
+    getDates(values, filters) {
+        const result = [];
+        if (!filters) {
+            filters = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
+        }
+        Object.keys(filters).forEach(key => {
+            const value = values[key];
+            const d = {};
+            if (value instanceof Date) {
+                d.from = value;
+            } else if (typeof value == 'object' && value.from instanceof Date) {
+                d.from = value.from;
+                if (value.to instanceof Date) {
+                    d.to = value.to;
+                }
+            }
+            if (d.from) {
+                result[filters[key]] = d;
+            }
+        });
+        return result;
+    }
+
+    getMaxDate(dateRef, now) {
+        const dateMax = new Date(dateRef.getFullYear(), 11, 31);
+        if (now == undefined) {
+            now = new Date();
+        }
+        return now <= dateMax ? now : dateMax;
+    }
+
     fillZero(value, len) {
         let res = parseInt(value).toString();
         while (res.length < len) {
@@ -633,7 +664,40 @@ class Sippol extends WebRobot {
         if (options.useForm == undefined) options.useForm = true;
         const items = [];
         const works = this.fetchDataWorks(options);
-        works.push([w => this.eachData(
+        const dates = this.getDates(options);
+        const keys = Object.keys(dates);
+        if (keys.length) {
+            const from = dates[keys[0]].from;
+            const to = dates[keys[0]].to ? this.getMaxDate(from, dates[keys[0]].to) : this.getMaxDate(from);
+            const months = [];
+            const names = ['Januari', 'Pebruari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'Nopember', 'Desember'];
+            for (let i = from.getMonth(); i <= to.getMonth(); i++) {
+                months.push(names[i]);
+            }
+            works.push([w => new Promise((resolve, reject) => {
+                const q = new Queue(months, m => {
+                    Work.works([
+                        [x => this.waitFor(By.xpath('//div[contains(@class,"btn-toolbar")]/div[1]/*[3]/button'))],
+                        [x => x.getRes(0).click()],
+                        [x => x.getRes(0).findElement(By.xpath('../ul/li/a[text()="_X_"]'.replace(/_X_/, m)))],
+                        [x => x.getRes(2).click()],
+                        [x => this.waitLoader()],
+                        [x => this.fetchDataRun(options, items)],
+                    ])
+                    .then(() => q.next())
+                    .catch(err => reject(err));
+                });
+                q.once('done', () => resolve(items));
+            })]);
+        } else {
+            works.push([w => this.fetchDataRun(options, items)]);
+        }
+        return Work.works(works);
+    }
+
+    fetchDataRun(options, items) {
+        return this.eachData(
+            // work
             el => {
                 const mode = options.mode ? options.mode : this.FETCH_DATA;
                 const op = this.fetchDataEachWorks(el, options);
@@ -664,9 +728,9 @@ class Sippol extends WebRobot {
                 }
                 return op;
             },
+            // done
             () => Promise.resolve(items)
-        )]);
-        return Work.works(works);
+        );
     }
 
     fetchDataWorks(options) {
@@ -676,14 +740,8 @@ class Sippol extends WebRobot {
         Object.keys(filters).forEach(key => {
             const value = options[key];
             let sorted;
-            if (value instanceof Date) {
-                sorted = this.SORT_DESCENDING;
-            } else if (typeof value == 'object' && value.from instanceof Date) {
-                if (value.to instanceof Date) {
-                    sorted = this.SORT_ASCENDING;
-                } else {
-                    sorted = this.SORT_DESCENDING;
-                }
+            if (value instanceof Date || (typeof value == 'object' && value.from instanceof Date)) {
+                sorted = this.SORT_ASCENDING;
             }
             if (sorted) {
                 works.push([w => this.sortData(filters[key], sorted)]);
@@ -701,21 +759,11 @@ class Sippol extends WebRobot {
 
     fetchDataEachWorks(el, options) {
         const works = [];
-        const filters = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
-        Object.keys(filters).forEach(key => {
-            const value = options[key];
-            let from, to;
-            if (value instanceof Date) {
-                from = value;
-            } else if (typeof value == 'object' && value.from instanceof Date) {
-                from = value.from;
-                if (value.to instanceof Date) {
-                    to = value.to;
-                }
-            }
-            if (from) {
+        const dates = this.getDates(options);
+        Object.keys(dates).forEach(key => {
+            if (dates[key].from) {
                 works.push([w => new Promise((resolve, reject) => {
-                    this.fetchDataEachMatch(el, filters[key], from, to)
+                    this.fetchDataEachMatch(el, key, dates[key].from, dates[key].to)
                         .then(result => {
                             switch (result) {
                                 case this.DATE_MATCH:
