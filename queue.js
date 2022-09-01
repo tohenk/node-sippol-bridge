@@ -127,7 +127,7 @@ class SippolDequeue extends EventEmitter {
             queue.setId(this.genId());
         }
         this.queues.push(queue);
-        this.queue.requeue([queue]);
+        this.queue.requeue([queue], queue.type == SippolQueue.QUEUE_CALLBACK ? true : false);
         return {status: 'queued', id: queue.id};
     }
 
