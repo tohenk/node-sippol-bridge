@@ -400,14 +400,6 @@ class App {
         return bridge;
     }
 
-    canHandle(queue) {
-        if (queue.type == SippolQueue.QUEUE_CALLBACK) {
-            return true;
-        }
-        // only handle when bridge is ready
-        return this.readyCount() > 0;
-    }
-
     readyCount() {
         let readyCnt = 0;
         this.bridges.forEach(b => {
@@ -416,42 +408,15 @@ class App {
         return readyCnt;
     }
 
-    canHandleNext(queue) {
-        if (queue.type == SippolQueue.QUEUE_CALLBACK) {
-            return !this.notify;
-        }
-        const bridge = this.getQueueHandler(queue);
-        const current = this.dequeue.getCurrent();
-        if (bridge && current) {
-            // bridge currently has no queue, so it can handle next
-            if (typeof bridge.queue == 'undefined') {
-                return true;
-            }
-            return current.bridge != bridge && bridge.queue.status != SippolQueue.STATUS_PROCESSING;
-        }
-        return false;
-    }
-
     processQueue(queue) {
         if (queue.type == SippolQueue.QUEUE_CALLBACK) {
-            return new Promise((resolve, reject) => {
-                this.notify = true;
-                SippolNotifier.notify(queue)
-                    .then(result => {
-                        this.notify = false;
-                        resolve(result);
-                    })
-                    .catch(err => {
-                        this.notify = false;
-                        reject(err);
-                    })
-                ;
-            });
+            return SippolNotifier.notify(queue);
         }
         const bridge = this.getQueueHandler(queue);
         if (bridge) {
             bridge.queue = queue;
             queue.bridge = bridge;
+            queue.ontimeout = () => bridge.sippol.stop();
             switch (queue.type) {
                 case SippolQueue.QUEUE_SPP:
                     return bridge.createSpp(queue);
@@ -474,7 +439,7 @@ class App {
             this.createBridges();
             this.createServer();
             process.on('uncaughtExceptionMonitor', (err, origin) => {
-                console.error('Got error %s: %s!', origin, err);
+                console.error('Got %s: %s!', origin, err);
             });
             return true;
         }

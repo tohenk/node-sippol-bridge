@@ -38,7 +38,7 @@ class SippolDequeue extends EventEmitter {
         super();
         this.time = new Date();
         this.queues = [];
-        this.queue = new Queue([], queue => this.doQueue(queue), () => this.isProcessing());
+        this.queue = new Queue([], queue => this.doQueue(queue), () => this.canProcess());
         this.timeout = 5 * 60 * 1000;
     }
 
@@ -75,12 +75,8 @@ class SippolDequeue extends EventEmitter {
         }
     }
 
-    isProcessing() {
-        if (this.consumer) {
-            const queue = this.getNext();
-            return queue && this.consumer.canHandle(queue) ? true : false;
-        }
-        return false;
+    canProcess() {
+        return this.consumer ? this.consumer.readyCount() > 0 : false;
     }
 
     setConsumer(consumer) {
@@ -99,14 +95,14 @@ class SippolDequeue extends EventEmitter {
                         queue.data.timeout : this.timeout;
                     if (timeout > 0 && d > timeout) {
                         queue.setStatus(SippolQueue.STATUS_TIMED_OUT);
-                        this.queue.next();
-                    }
-                }
-                // check for next queue
-                queue = this.getNext();
-                if (queue) {
-                    if (this.consumer.canHandleNext(queue)) {
-                        this.queue.next();
+                        if (typeof queue.ontimeout == 'function') {
+                            queue.ontimeout()
+                                .then(() => this.queue.next())
+                                .catch(() => this.queue.next())
+                            ;
+                        } else {
+                            this.queue.next();
+                        }
                     }
                 }
                 // run on next
