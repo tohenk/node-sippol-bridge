@@ -76,7 +76,7 @@ class SippolDequeue extends EventEmitter {
     }
 
     canProcess() {
-        return this.consumer ? this.consumer.readyCount() > 0 : false;
+        return this.consumer ? this.consumer.canProcessQueue() : false;
     }
 
     setConsumer(consumer) {
@@ -103,6 +103,13 @@ class SippolDequeue extends EventEmitter {
                         } else {
                             this.queue.next();
                         }
+                    }
+                }
+                // check for next queue
+                queue = this.getNext();
+                if (queue && queue.type != SippolQueue.QUEUE_CALLBACK) {
+                    if (this.consumer.canHandleNextQueue(queue)) {
+                        this.queue.next();
                     }
                 }
                 // run on next
@@ -283,6 +290,10 @@ class SippolQueue
     error(error) {
         this.setStatus(SippolQueue.STATUS_ERROR);
         this.setResult(error);
+    }
+
+    finished() {
+        return [SippolQueue.STATUS_DONE, SippolQueue.STATUS_ERROR, SippolQueue.STATUS_TIMED_OUT].indexOf(this.status) >= 0;
     }
 
     static create(type, data, callback = null) {
