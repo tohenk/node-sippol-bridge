@@ -615,7 +615,7 @@ class Sippol extends WebRobot {
         ]);
     }
 
-    eachData(work, done, filter, direction = 1) {
+    eachData(work, done, filter, direction = null, continueOnError = null) {
         const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
         return this.each({
             selector: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
@@ -624,7 +624,8 @@ class Sippol extends WebRobot {
             works: el => work(el),
             done: done,
             filter: filter,
-            direction: direction
+            direction: direction ? direction : 1,
+            continueOnError: continueOnError
         });
     }
 
@@ -729,7 +730,11 @@ class Sippol extends WebRobot {
                 return op;
             },
             // done
-            () => Promise.resolve(items)
+            () => Promise.resolve(items),
+            // direction
+            options.direction,
+            // continue on error
+            options.continueOnError
         );
     }
 

@@ -277,7 +277,7 @@ class SippolBridge {
 
     listSpp(queue) {
         return Work.works([
-            [w => this.list(queue.data)],
+            [w => this.list(Object.assign({continueOnError: true}, queue.data))],
             [w => new Promise((resolve, reject) => {
                 const items = w.getRes(0);
                 const matches = this.filterItems(items, {year: queue.data.year});
@@ -305,7 +305,8 @@ class SippolBridge {
             })],
             [w => this.list(Object.assign({
                 mode: this.sippol.FETCH_DOWNLOAD,
-                status: this.sippol.status.SP2D_CAIR
+                status: this.sippol.status.SP2D_CAIR,
+                continueOnError: true
             }, queue.data))],
             [w => new Promise((resolve, reject) => {
                 const items = w.getRes(1);
