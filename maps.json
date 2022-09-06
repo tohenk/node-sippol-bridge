@@ -5,7 +5,7 @@
 		"syarat": "number:26",
 		"pk": "number:2475",
 		"pkOto": "number:2275",
-		"pegOto2": "number:1005",
+		"pegOto2": "number:1006",
 		"untuk": "UNTUK",
 		"ket": "KET"
 	},
@@ -27,6 +27,7 @@
 	"rincian": {
 		"#search_keg_value": "KEG",
 		"#search_rek_value": "REK",
+		"#search_sdana_value": "DANA UMUM",
 		"jumlah": "AFEKTASI"
 	}
 }

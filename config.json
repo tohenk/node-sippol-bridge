@@ -1,0 +1,16 @@
+{
+    "global": {
+        "url":"https://example.com",
+        "browser":"chrome",
+        "datakey":"NPWP",
+        "spptype":"number:26",
+        "readinessTimeout":60000
+    },
+    "bridges": {
+        "sippol-2022": {
+            "username":"CHANGEME",
+            "password":"CHANGEME",
+            "year":2022
+        }
+    }
+}
