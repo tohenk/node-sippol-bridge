@@ -708,7 +708,11 @@ class Sippol extends WebRobot {
                             const data = new SippolData();
                             this.retrData(el, data, options.useForm)
                                 .then(okay => {
-                                    if (okay) items.push(data);
+                                    let added = okay ? true : false;
+                                    if (added && options.spptype && data.Syarat) {
+                                        added = options.spptype == data.Syarat;
+                                    }
+                                    if (added) items.push(data);
                                     resolve();
                                 })
                                 .catch(err => reject(err))
@@ -892,6 +896,7 @@ class Sippol extends WebRobot {
                             break;
                     }
                 }
+                data.Syarat = values.syarat;
                 resolve(data);
             })],
         ]);

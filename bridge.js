@@ -42,26 +42,13 @@ class SippolBridge {
     }
 
     getOptions(options) {
-        if (options.datakey) {
-            this.datakey = options.datakey;
-            delete options.datakey;
-        }
-        if (options.docs) {
-            this.docs = options.docs;
-            delete options.docs;
-        }
-        if (options.maxNotifiedItems) {
-            this.maxNotifiedItems = options.maxNotifiedItems;
-            delete options.maxNotifiedItems;
-        }
-        if (options.maxDownloadItems) {
-            this.maxDownloadItems = options.maxDownloadItems;
-            delete options.maxDownloadItems;
-        }
-        if (options.accepts) {
-            this.accepts = options.accepts;
-            delete options.accepts;
-        }
+        const opts = ['datakey', 'spptype', 'accepts', 'docs', 'maxNotifiedItems', 'maxDownloadItems'];
+        opts.forEach(opt => {
+            if (options[opt]) {
+                this[opt] = options[opt];
+                delete options[opt];
+            }
+        });
         return options;
     }
 
@@ -154,6 +141,7 @@ class SippolBridge {
     list(options) {
         options = options || {};
         if (options.clear) this.items = {};
+        if (this.spptype) options.spptype = this.spptype;
         return this.do(w => this.sippol.fetchData(options), options.status);
     }
 
