@@ -25,7 +25,6 @@
 const fs = require('fs');
 const { By, Key } = require('selenium-webdriver');
 const Queue = require('@ntlab/work/queue');
-const Work = require('@ntlab/work/work');
 const WebRobot = require('@ntlab/webrobot');
 const debug = require('debug')('sippol');
 
@@ -87,6 +86,8 @@ class Sippol extends WebRobot {
             PAKTA: 'Pakta Integritas',
             LAIN: 'Dokumen kelengkapan lainnya',
         });
+        // add expected error
+        WebRobot.expectErr(SippolStopError);
     }
 
     pickPid(value) {
@@ -214,7 +215,7 @@ class Sippol extends WebRobot {
     }
 
     start() {
-        return Work.works([
+        return this.works([
             [w => this.open()],
             [w => this.waitLoader()],
             [w => this.login()],
@@ -231,7 +232,7 @@ class Sippol extends WebRobot {
             let shown = false;
             let t = Date.now();
             const f = () => {
-                Work.works([
+                this.works([
                     [w => this.findElements(By.id('loading-bar-spinner'))],
                     [w => new Promise((resolve, reject) => {
                         let wait = true;
@@ -262,7 +263,7 @@ class Sippol extends WebRobot {
     }
 
     login() {
-        return Work.works([
+        return this.works([
             [w => this.isLoggedIn(true)],
             [w => this.waitAndClick(By.xpath('//button[@ng-click="vm.login()"]')),
                 w => !w.getRes(0)],
@@ -298,7 +299,7 @@ class Sippol extends WebRobot {
     }
 
     showJenis(jenis, wait = true) {
-        return Work.works([
+        return this.works([
             [w => this.findElement(By.xpath('//div[contains(@class,"btn-toolbar")]/div[6]/button'))],
             [w => this.getText([By.xpath('.//span[@ng-show="vm.js"]')], w.getRes(0))],
             [w => Promise.resolve(w.getRes(1)[0].endsWith(jenis))],
@@ -314,7 +315,7 @@ class Sippol extends WebRobot {
         if (Object.values(this.status).indexOf(status) < 0) {
             return Promise.reject(new Error('Status of ' + status + ' is unknown!'));
         }
-        return Work.works([
+        return this.works([
             [w => this.waitAndClick(By.xpath('//div[contains(@class,"btn-toolbar")]/div[3]/button'))],
             [w => this.waitAndClick(By.xpath('//ul/li/a[@ng-click="vm.dokStatus=\'_X_\'"]'.replace(/_X_/, status)))],
             [w => this.waitLoader(), w => wait],
@@ -322,7 +323,7 @@ class Sippol extends WebRobot {
     }
 
     refreshData(wait = true) {
-        return Work.works([
+        return this.works([
             [w => this.waitAndClick(By.xpath('//button[@ng-click="vm.loadAll()"]'))],
             [w => this.waitLoader(), w => wait],
         ]);
@@ -333,7 +334,7 @@ class Sippol extends WebRobot {
         if (!m) {
             return Promise.reject('Invalid filter type: ' + type);
         }
-        return Work.works([
+        return this.works([
             [w => this.waitFor(By.xpath('//input[@ng-model="vm._X_"]'.replace(/_X_/, m)))],
             [w => this.fillInput(w.getRes(0), null == data ? data : data + (type != this.DATA_PENERIMA ? Key.ENTER : ''))],
             [w => this.refreshData(), w => type == this.DATA_PENERIMA]
@@ -341,7 +342,7 @@ class Sippol extends WebRobot {
     }
 
     resetFilter() {
-        return Work.works([
+        return this.works([
             [w => this.filterData(null, this.DATA_SPP)],
             [w => this.filterData(null, this.DATA_SPM)],
             [w => this.filterData(null, this.DATA_SP2D)],
@@ -354,7 +355,7 @@ class Sippol extends WebRobot {
         if (!m) {
             return Promise.reject('Invalid sort type: ' + type);
         }
-        return Work.works([
+        return this.works([
             [w => this.findElement(By.xpath('//th[@jh-sort-by="_X_"]/span[contains(@class,"glyphicon")]'.replace(/_X_/, m)))],
             [w => this.ensureSorted(w.getRes(0), dir)],
         ]);
@@ -374,12 +375,12 @@ class Sippol extends WebRobot {
                 ;
             })
         }
-        return Work.works([f, f]);
+        return this.works([f, f]);
     }
 
     isSorted(el, dir) {
         if (!el) return Promise.reject('No sort element');
-        return Work.works([
+        return this.works([
             [w => el.getAttribute('class')],
             [w => new Promise((resolve, reject) => {
                 let sorted;
@@ -400,7 +401,7 @@ class Sippol extends WebRobot {
     }
 
     findPager(pager) {
-        return Work.works([
+        return this.works([
             [w => this.findElement(pager)],
             [w => w.getRes(0).isDisplayed()],
             [w => new Promise((resolve, reject) => {
@@ -417,7 +418,7 @@ class Sippol extends WebRobot {
         const isPage = ['first', 'prev', 'next', 'last'].indexOf(page) < 0;
         const xpath = isPage ? './/li[contains(@class,"pagination-page")]/a[text()="_PAGE_"]' :
             './/li[contains(@class,"pagination-_PAGE_")]/a';
-        return Work.works([
+        return this.works([
             // find desired navigation button
             [w => pager.findElements(By.xpath(xpath.replace(/_PAGE_/, page)))],
             // ensure navigation button is clickable
@@ -449,14 +450,14 @@ class Sippol extends WebRobot {
     navigatePage(pager, page, options) {
         options = options || {};
         if (typeof options.wait == 'undefined') options.wait = true;
-        return Work.works([
+        return this.works([
             [w => this.findPager(pager)],
             [w => this.findPage(w.getRes(0), page, options), w => w.getRes(0)],
         ]);
     }
 
     getPages(pager, dir) {
-        return Work.works([
+        return this.works([
             [w => this.navigatePage(pager, 'last')],
             [w => w.getRes(0).findElements(By.xpath('.//li[contains(@class,"pagination-page")]')), w => w.getRes(0)],
             [w => this.getText([By.xpath('.')], w.getRes(1)[w.getRes(1).length - 1]), w => w.getRes(0)],
@@ -472,7 +473,7 @@ class Sippol extends WebRobot {
     }
 
     eachrun(data) {
-        return Work.works([
+        return this.works([
             // get items
             [w => this.getDriver().findElements(data.selector)],
             // apply filter
@@ -514,10 +515,10 @@ class Sippol extends WebRobot {
                         if (data.wait) {
                             works.push([x => this.sleep(this.delay)]);
                         }
-                        Work.works([
+                        this.works([
                             [x => el.isDisplayed(), x => data.visible],
                             [x => Promise.resolve(!data.visible || getRes(0))],
-                            [x => Work.works(works), x => x.getRes(1)],
+                            [x => this.works(works), x => x.getRes(1)],
                         ])
                         .then(() => finishRun(() => q.next()))
                         .catch(err => {
@@ -527,7 +528,7 @@ class Sippol extends WebRobot {
                                 result.next = false;
                                 q.done();
                             } else {
-                                Work.works([
+                                this.works([
                                     [x => Promise.resolve(err && typeof data.info == 'function')],
                                     [x => data.info(el), x => x.getRes(0)],
                                     [x => Promise.resolve(console.error('Got error processing %s: %s!', x.getRes(1), err)), x => x.getRes(0)],
@@ -554,7 +555,7 @@ class Sippol extends WebRobot {
         if (data.wait == undefined) data.wait = false;
         if (data.visible == undefined) data.visible = false;
         if (data.direction == undefined) data.direction = 1;
-        return Work.works([
+        return this.works([
             // get pages
             [w => this.getPages(data.pager, data.direction), w => data.pager],
             [w => Promise.resolve(data.pages = data.pager ? w.getRes(0) : 1)],
@@ -677,7 +678,7 @@ class Sippol extends WebRobot {
             }
             works.push([w => new Promise((resolve, reject) => {
                 const q = new Queue(months, m => {
-                    Work.works([
+                    this.works([
                         [x => this.waitFor(By.xpath('//div[contains(@class,"btn-toolbar")]/div[1]/*[3]/button'))],
                         [x => x.getRes(0).click()],
                         [x => x.getRes(0).findElement(By.xpath('../ul/li/a[text()="_X_"]'.replace(/_X_/, m)))],
@@ -693,7 +694,7 @@ class Sippol extends WebRobot {
         } else {
             works.push([w => this.fetchDataRun(options, items)]);
         }
-        return Work.works(works);
+        return this.works(works);
     }
 
     fetchDataRun(options, items) {
@@ -712,6 +713,7 @@ class Sippol extends WebRobot {
                                     if (added && options.spptype && data.Syarat) {
                                         added = options.spptype == data.Syarat;
                                     }
+                                    delete data.Syarat;
                                     if (added) items.push(data);
                                     resolve();
                                 })
@@ -795,7 +797,7 @@ class Sippol extends WebRobot {
     }
 
     fetchDataEachMatch(el, filter, from, to) {
-        return Work.works([
+        return this.works([
             [w => el.findElement(By.xpath('.//span[@ng-show="spp._X_"]'.replace(/_X_/, filter)))],
             [w => w.getRes(0).isDisplayed()],
             [w => Promise.resolve(this.DATE_BEFORE), w => !w.getRes(1)],
@@ -822,7 +824,7 @@ class Sippol extends WebRobot {
     }
 
     retrData(el, data, useForm) {
-        return Work.works([
+        return this.works([
             [w => this.retrDataStatusFromRow(el)],
             [w => this.retrDataFromForm(el, data), w => w.getRes(0) && useForm],
             [w => this.retrDataFromRow(el, data), w => w.getRes(0) && !useForm],
@@ -830,7 +832,7 @@ class Sippol extends WebRobot {
     }
 
     retrDataFromForm(el, data) {
-        return Work.works([
+        return this.works([
             [w => this.clickEditSppButton(el)],
             [w => this.waitLoader()],
             [w => this.getValuesFromSppForm(data)],
@@ -838,7 +840,7 @@ class Sippol extends WebRobot {
     }
 
     getValuesFromSppForm(data) {
-        return Work.works([
+        return this.works([
             // wait for form to completely shown
             [w => this.waitFor(By.xpath('//form[@name="editForm"]'))],
             // get form title
@@ -903,7 +905,7 @@ class Sippol extends WebRobot {
     }
 
     retrDataFromRow(el, data) {
-        return Work.works([
+        return this.works([
             [w => this.retrDataIdFromRow(el)],
             [w => this.getText([
                 By.xpath('./td[3]/span[1]'),         By.xpath('./td[3]/span[2]'), // SPP
@@ -928,7 +930,7 @@ class Sippol extends WebRobot {
     }
 
     retrDataIdFromRow(el) {
-        return Work.works([
+        return this.works([
             [w => el.findElement(By.xpath('./td[2]'))],
             [w => w.getRes(0).getAttribute('title')],
             [w => Promise.resolve(this.pickPid(w.getRes(1)))],
@@ -936,7 +938,7 @@ class Sippol extends WebRobot {
     }
 
     retrDataStatusFromRow(el) {
-        return Work.works([
+        return this.works([
             [w => el.findElement(By.xpath('./td[3]/span[@ng-show="spp.pkSppFlag!=0"]'))],
             [w => w.getRes(0).getAttribute('class')],
             [w => Promise.resolve(w.getRes(1).indexOf('glyphicon-remove') < 0)],
@@ -944,7 +946,7 @@ class Sippol extends WebRobot {
     }
 
     saveSpp(el) {
-        return Work.works([
+        return this.works([
             [w => this.getText([
                 By.xpath('./td[2]'),                 // Jenis
                 By.xpath('./td[5]/span[1]/strong'),  // SP2D Nomor
@@ -965,7 +967,7 @@ class Sippol extends WebRobot {
     }
 
     createSpp(data) {
-        return Work.works([
+        return this.works([
             [w => this.clickAddSppButton()],
             [w => this.waitLoader()],
             [w => this.fillSppForm(data)],
@@ -973,7 +975,7 @@ class Sippol extends WebRobot {
     }
 
     updateSpp(id, data) {
-        return Work.works([
+        return this.works([
             [w => this.locateData(id)],
             [w => this.clickEditSppButton(w.getRes(0)), w => w.getRes(0)],
             [w => this.waitLoader(), w => w.getRes(0)],
@@ -987,7 +989,7 @@ class Sippol extends WebRobot {
     }
 
     clickEditSppButton(el) {
-        return Work.works([
+        return this.works([
             [w => el.findElement(By.xpath('./td[2]'))],
             [w => w.getRes(0).click()],
             [w => this.click({el: el, data: By.xpath('./td[9]/button[@ng-click="vm.sppEdit(spp)"]')})],
@@ -1017,7 +1019,7 @@ class Sippol extends WebRobot {
         }
         works.push([w => this.sleep(this.opdelay)]);
         works.push([w => this.waitAndClick(By.xpath('//h4[@id="mySppLabel"]/../../div[@class="modal-footer"]/button[contains(@ng-disabled,"vm.isSaving")]'))]);
-        return Work.works(works);
+        return this.works(works);
     }
 
     getSppFormData(data) {
@@ -1068,12 +1070,12 @@ class Sippol extends WebRobot {
                 mapping.wait = true;
                 mapping.done = (data, next) => {
                     // wait for autocomplete-row
-                    Work.works([
+                    this.works([
                         [w => this.sleep(this.opdelay)],
                         [w => this.getDriver().findElements(By.xpath('//div[@class="angucomplete-row"]'))],
                         [w => new Promise((resolve, reject) => {
                             const q = new Queue(w.getRes(1), el => {
-                                Work.works([
+                                this.works([
                                     [x => el.getText()],
                                     [x => el.click(), x => x.getRes(0).indexOf(data.value) >= 0],
                                     [x => Promise.reject(), x => x.getRes(0).indexOf(data.value) < 0],
@@ -1102,7 +1104,7 @@ class Sippol extends WebRobot {
     }
 
     uploadDocs(id, docs) {
-        return Work.works([
+        return this.works([
             [w => this.locateData(id)],
             [w => w.getRes(0).click(),
                 w => w.getRes(0)],
@@ -1127,7 +1129,7 @@ class Sippol extends WebRobot {
             let idx = -1;
             const q = new Queue(elements, el => {
                 idx++;
-                Work.works([
+                this.works([
                     [w => el.getText()],
                     [w => el.findElement(By.xpath('./span[contains(@class,"glyphicon-download")]'))],
                     [w => w.getRes(1).isDisplayed()],
@@ -1168,7 +1170,7 @@ class Sippol extends WebRobot {
     }
 
     uploadDocFile(el, file, index) {
-        return Work.works([
+        return this.works([
             [w => this.getDriver().findElements(By.xpath('//label/input[@type="file" and @ngf-select="vm.sppSyaratUp($file, spp, dok)"]'))],
             [w => Promise.resolve(debug('uploading document %s', file)),
                 w => index < w.getRes(0).length],

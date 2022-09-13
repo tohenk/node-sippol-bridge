@@ -24,7 +24,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const Work = require('@ntlab/work/work');
 const Queue = require('@ntlab/work/queue');
 const { Sippol } = require('./sippol');
 const SippolQueue = require('./queue');
@@ -39,6 +38,7 @@ class SippolBridge {
     constructor(options) {
         this.sippol = new Sippol(this.getOptions(options));
         this.state = this.STATE_NONE;
+        this.works = this.sippol.works;
     }
 
     getOptions(options) {
@@ -130,8 +130,8 @@ class SippolBridge {
         if (typeof theworks == 'function') {
             works.push(theworks);
         }
-        return Work.works(works, {
-            done: () => Work.works([
+        return this.works(works, {
+            done: () => this.works([
                 [w => this.sippol.stop()],
                 [w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay))],
             ])
@@ -146,7 +146,7 @@ class SippolBridge {
     }
 
     getPenerima(penerima) {
-        return Work.works([
+        return this.works([
             [w => this.sippol.filterData(penerima, this.sippol.DATA_PENERIMA)],
             [w => this.sippol.sleep(this.sippol.opdelay)],
             [w => this.sippol.fetchData()],
@@ -264,7 +264,7 @@ class SippolBridge {
     }
 
     listSpp(queue) {
-        return Work.works([
+        return this.works([
             [w => this.list(Object.assign({continueOnError: true}, queue.data))],
             [w => new Promise((resolve, reject) => {
                 const items = w.getRes(0);
@@ -279,7 +279,7 @@ class SippolBridge {
 
     downloadSpp(queue) {
         const downloaddir = this.sippol.options.downloaddir;
-        return Work.works([
+        return this.works([
             [w => new Promise((resolve, reject) => {
                 fs.readdir(downloaddir, {withFileTypes: true}, (err, files) => {
                     if (err) return reject(err);
@@ -340,7 +340,7 @@ class SippolBridge {
             [w => new Promise((resolve, reject) => {
                 const q = new Queue(Object.keys(this.docs), doctype => {
                     const filename = docfname(doctype);
-                    Work.works([
+                    this.works([
                         [w => Promise.resolve(fs.mkdirSync(doctmpdir)), w => !fs.existsSync(doctmpdir)],
                         [w => Promise.resolve(fs.unlinkSync(filename)), w => fs.existsSync(filename)],
                         [w => this.saveDoc(filename, queue.data[doctype])],
