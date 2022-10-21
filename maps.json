@@ -1,7 +1,7 @@
 {
 	"spp": {
-		"tglSpp": "TGL_SPP",
-		"jenis": "number:1",
+		"#field_tglSpp": "TGL_SPP",
+		"+jenis": "number:1",
 		"syarat": "number:26",
 		"pk": "number:2475",
 		"pkOto": "number:2275",

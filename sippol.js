@@ -1035,18 +1035,23 @@ class Sippol extends WebRobot {
         for (let key in maps) {
             let mapping = {};
             let identifier = key;
-            if (key.substring(0, 1) == '#') {
-                identifier = key.substring(1);
+            let addwait = false;
+            if (identifier.substring(0, 1) == '+') {
+                identifier = identifier.substring(1);
+                addwait = true;
+            }
+            if (identifier.substring(0, 1) == '#') {
+                identifier = identifier.substring(1);
                 mapping.target = By.id(identifier);
             } else {
-                mapping.target = By.name(key);
+                mapping.target = By.name(identifier);
             }
             let value = maps[key];
             if (typeof value == 'string' && data[value]) {
                 value = data[value];
             }
             // handle tgl
-            if (identifier.indexOf('tgl') == 0 && typeof value == 'string') {
+            if (identifier.indexOf('tgl') >= 0 && typeof value == 'string') {
                 let p = value.indexOf(' ');
                 if (p > 0) {
                     value = value.substring(0, p);
@@ -1085,6 +1090,7 @@ class Sippol extends WebRobot {
                             });
                             q.once('done', () => reject('No match for ' + data.value));
                         })],
+                        [w => this.waitLoader(), w => addwait],
                     ])
                     .then(() => next())
                     .catch(err => {
@@ -1096,6 +1102,12 @@ class Sippol extends WebRobot {
                             throw err;
                         }
                     });
+                }
+            } else if (addwait) {
+                mapping.done = (data, next) => {
+                    this.waitLoader()
+                        .then(() => next())
+                        .catch(err => reject(err));
                 }
             }
             result.push(mapping);
