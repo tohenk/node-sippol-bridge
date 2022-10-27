@@ -27,6 +27,7 @@ const path = require('path');
 const Queue = require('@ntlab/work/queue');
 const { Sippol } = require('./sippol');
 const SippolQueue = require('./queue');
+const SippolUtil = require('./util');
 const JSZip = require('jszip');
 
 class SippolBridge {
@@ -153,29 +154,35 @@ class SippolBridge {
         ]);
     }
 
+    createCallback(data, callback, init) {
+        const callbackQueue = SippolQueue.createCallbackQueue(data, callback);
+        if (typeof init == 'function') {
+            init(callbackQueue);
+        }
+        return SippolQueue.addQueue(callbackQueue);
+    }
+
     notifyItems(items, callback) {
         if (Array.isArray(items)) {
-            this.processItemsWithLimit(items, part => {
-                const callbackQueue = SippolQueue.createCallbackQueue({items: part}, callback);
-                SippolQueue.addQueue(callbackQueue);
+            this.processItemsWithLimit(items, (part, next) => {
+                this.createCallback({items: part}, callback);
+                next();
             }, this.maxNotifiedItems || 500);
-        } else {
-            const callbackQueue = SippolQueue.createCallbackQueue(items, callback);
-            SippolQueue.addQueue(callbackQueue);
         }
     }
 
     processItemsWithLimit(items, callback, limit) {
         let maxItems = limit || 100;
         let count = items.length;
+        let n = maxItems > 0 ? Math.ceil(count / maxItems) : 1;
         let pos = 0;
-        while (count) {
-            let n = maxItems > 0 && count > maxItems ? maxItems : count;
-            let part = items.slice(pos, n);
-            callback(part);
-            count -= n;
-            pos += n;
-        }
+        const q = new Queue(Array.from({length: n}), i => {
+            let num = Math.min(maxItems > 0 ? maxItems : count, count);
+            let part = items.slice(pos, pos + num);
+            pos += num;
+            count -= num;
+            callback(part, () => q.next());
+        });
     }
 
     query(queue) {
@@ -216,11 +223,10 @@ class SippolBridge {
                                     }
                                 }
                                 if (idx < 0) idx = 0;
-                                const callbackQueue = SippolQueue.createCallbackQueue({
+                                this.createCallback({
                                     spp: matches[idx],
                                     ref: queue.data[this.datakey] ? queue.data[this.datakey] : null
                                 }, queue.callback);
-                                SippolQueue.addQueue(callbackQueue);
                             }
                             return reject('SPP for ' + penerima + ' has been created!');
                         }
@@ -252,8 +258,7 @@ class SippolBridge {
                     .then(items => {
                         matches = this.filterItems(items, {nominal: jumlah, untuk: untuk});
                         if (matches.length && queue.callback) {
-                            const callbackQueue = SippolQueue.createCallbackQueue({spp: matches[0]}, queue.callback);
-                            SippolQueue.addQueue(callbackQueue);
+                            this.createCallback({spp: matches[0]}, queue.callback);
                         }
                         resolve(items);
                     })
@@ -299,7 +304,8 @@ class SippolBridge {
             [w => new Promise((resolve, reject) => {
                 const items = w.getRes(1);
                 if (items.length && queue.callback) {
-                    this.processItemsWithLimit(items, part => {
+                    const sid = SippolUtil.genId();
+                    this.processItemsWithLimit(items, (part, next) => {
                         const zip = new JSZip();
                         const q = new Queue(part, spp => {
                             const filename = path.join(downloaddir, spp);
@@ -310,17 +316,29 @@ class SippolBridge {
                                     }
                                     q.next();
                                 });
+                            } else {
+                                q.next();
                             }
-                        }, this.maxDownloadItems || 250);
-                        q.once('done', () => {
-                            zip.generateAsync({type: 'nodebuffer'})
-                                .then(stream => {
-                                    this.notifyItems({download: stream}, queue.callback);
-                                })
-                                .catch(err => reject(err))
-                            ;
                         });
-                    });
+                        q.once('done', () => {
+                            if (Object.keys(zip.files).length) {
+                                zip.generateAsync({
+                                    type: 'nodebuffer',
+                                    compression: 'DEFLATE',
+                                    compressionOptions: {
+                                        level: 9
+                                    },
+                                }).then(stream => {
+                                    this.createCallback({sid: sid, download: stream}, queue.callback, queue => {
+                                        queue.resolve = () => next();
+                                        queue.reject = () => next();
+                                    });
+                                }).catch(err => reject(err));
+                            } else {
+                                next();
+                            }
+                        });
+                    }, this.maxDownloadItems || 250);
                 }
                 resolve(items);
             }), w => w.getRes(1)],
@@ -400,8 +418,7 @@ class SippolBridge {
                     .then(res => {
                         result = res;
                         if (res && queue.callback) {
-                            const callbackQueue = SippolQueue.createCallbackQueue({Id: queue.data.Id, docs: res}, queue.callback);
-                            SippolQueue.addQueue(callbackQueue);
+                            this.createCallback({Id: queue.data.Id, docs: res}, queue.callback);
                         }
                         resolve();
                     })

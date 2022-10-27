@@ -227,41 +227,6 @@ class Sippol extends WebRobot {
         return this.close();
     }
 
-    waitLoader() {
-        return new Promise((resolve, reject) => {
-            let shown = false;
-            let t = Date.now();
-            const f = () => {
-                this.works([
-                    [w => this.findElements(By.id('loading-bar-spinner'))],
-                    [w => new Promise((resolve, reject) => {
-                        let wait = true;
-                        if (shown && w.res.length == 0) {
-                            wait = false;
-                        }
-                        if (w.res.length == 1 && !shown) {
-                            shown = true;
-                        }
-                        // is timed out
-                        if (!shown && Date.now() - t > this.wait) {
-                            wait = false;
-                        }
-                        resolve(wait);
-                    })],
-                ])
-                .then(result => {
-                    if (result) {
-                        setTimeout(f, !shown ? 250 : 500);
-                    } else {
-                        resolve();
-                    }
-                })
-                .catch(err => reject(err));
-            }
-            f();
-        });
-    }
-
     login() {
         return this.works([
             [w => this.isLoggedIn(true)],
@@ -295,6 +260,57 @@ class Sippol extends WebRobot {
                     }
                 })
             ;
+        });
+    }
+
+    waitLoader() {
+        return this.waitPresence(By.id('loading-bar-spinner'), null, By.id('loading-bar'));
+    }
+
+
+    waitPresence(data, time = null, check = null) {
+        if (null == time) {
+            time = this.wait;
+        }
+        return new Promise((resolve, reject) => {
+            let shown = false;
+            let t = Date.now();
+            const f = () => {
+                this.works([
+                    [w => this.findElements(data)],
+                    [w => new Promise((resolve, reject) => {
+                        let wait = true;
+                        if (shown && w.res.length == 0) {
+                            wait = false;
+                        }
+                        if (w.res.length == 1 && !shown) {
+                            shown = true;
+                        }
+                        // is timed out
+                        if (!shown && Date.now() - t > time) {
+                            wait = false;
+                        }
+                        resolve(wait);
+                    })],
+                ])
+                .then(result => {
+                    // element is still present
+                    if (result) {
+                        // consider it is done when a check element has gone
+                        if (check && Date.now() - t > time * 3) {
+                            this.waitPresence(check)
+                                .then(() => resolve())
+                                .catch(err => reject(err));
+                        } else {
+                            setTimeout(f, !shown ? 250 : 500);
+                        }
+                    } else {
+                        resolve();
+                    }
+                })
+                .catch(err => reject(err));
+            }
+            f();
         });
     }
 
@@ -551,9 +567,6 @@ class Sippol extends WebRobot {
     }
 
     each(data) {
-        if (data.click == undefined) data.click = false;
-        if (data.wait == undefined) data.wait = false;
-        if (data.visible == undefined) data.visible = false;
         if (data.direction == undefined) data.direction = 1;
         return this.works([
             // get pages
@@ -563,6 +576,18 @@ class Sippol extends WebRobot {
             // process items
             [w => new Promise((resolve, reject) => {
                 let retval;
+                // handler for resolve
+                const done = stop => {
+                    debug('each resolved with %s', retval);
+                    if (stop && typeof data.finalize == 'function') {
+                        data.finalize()
+                            .then(() => resolve(retval))
+                            .catch(err => resolve(retval))
+                        ;
+                    } else {
+                        resolve(retval);
+                    }
+                }
                 // handler to go to next page or resolve when no more pages
                 const nextPageOrResolve = (next = true) => {
                     if (next && data.pager) {
@@ -572,14 +597,10 @@ class Sippol extends WebRobot {
                             // if more than 1 page, go back to first page if needed
                             if (data.pages > 1 && data.resetPage) {
                                 this.navigatePage(data.pager, 'first')
-                                    .then(() => {
-                                        debug('each resolved with %s', retval);
-                                        resolve(retval);
-                                    })
+                                    .then(() => done(data.i == data.n))
                                 ;
                             } else {
-                                debug('each resolved with %s', retval);
-                                resolve(retval);
+                                done(data.i == data.n);
                             }
                         } else {
                             this.navigatePage(data.pager, data.page, {returnPage: true})
@@ -587,15 +608,13 @@ class Sippol extends WebRobot {
                                     if (page) {
                                         run();
                                     } else {
-                                        debug('each resolved with %s', retval);
-                                        resolve(retval);
+                                        done(data.i == data.n);
                                     }
                                 })
                             ;
                         }
                     } else {
-                        debug('each resolved with %s', retval);
-                        resolve(retval);
+                        done(true);
                     }
                 }
                 // handler loop
@@ -616,29 +635,26 @@ class Sippol extends WebRobot {
         ]);
     }
 
-    eachData(work, done, filter, direction = null, continueOnError = null) {
+    eachData(options) {
         const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
-        return this.each({
+        Object.assign(options, {
             selector: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
             pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
             info: el => this.retrDataIdFromRow(el),
-            works: el => work(el),
-            done: done,
-            filter: filter,
-            direction: direction ? direction : 1,
-            continueOnError: continueOnError
+            works: el => options.work(el),
         });
+        return this.each(options);
     }
 
     locateData(id) {
         let match;
-        return this.eachData(
-            el => {
+        return this.eachData({
+            work: el => {
                 match = el;
                 return [];
             },
-            () => Promise.resolve(match),
-            elements => new Promise((resolve, reject) => {
+            done: () => Promise.resolve(match),
+            filter: elements => new Promise((resolve, reject) => {
                 const matched = [];
                 const q = new Queue(elements, el => {
                     this.retrDataIdFromRow(el)
@@ -657,8 +673,8 @@ class Sippol extends WebRobot {
                     resolve(matched);
                 });
             }),
-            -1 // start from last page
-        );
+            direction: -1, // start from last page
+        });
     }
 
     fetchData(options) {
@@ -677,7 +693,10 @@ class Sippol extends WebRobot {
                 months.push(names[i]);
             }
             works.push([w => new Promise((resolve, reject) => {
+                let i = 0;
+                options.n = months.length;
                 const q = new Queue(months, m => {
+                    options.i = ++i;
                     this.works([
                         [x => this.waitFor(By.xpath('//div[contains(@class,"btn-toolbar")]/div[1]/*[3]/button'))],
                         [x => x.getRes(0).click()],
@@ -692,16 +711,16 @@ class Sippol extends WebRobot {
                 q.once('done', () => resolve(items));
             })]);
         } else {
+            Object.assign(options, {n: 1, i: 1});
             works.push([w => this.fetchDataRun(options, items)]);
         }
         return this.works(works);
     }
 
     fetchDataRun(options, items) {
-        return this.eachData(
-            // work
-            el => {
-                const mode = options.mode ? options.mode : this.FETCH_DATA;
+        const mode = options.mode ? options.mode : this.FETCH_DATA;
+        Object.assign(options, {
+            work: el => {
                 const op = this.fetchDataEachWorks(el, options);
                 switch (mode) {
                     case this.FETCH_DATA:
@@ -735,13 +754,16 @@ class Sippol extends WebRobot {
                 }
                 return op;
             },
-            // done
-            () => Promise.resolve(items),
-            // direction
-            options.direction,
-            // continue on error
-            options.continueOnError
-        );
+            done: () => Promise.resolve(items),
+        });
+        // add a pause when downloading
+        if (mode == this.FETCH_DOWNLOAD) {
+            options.finalize = () => {
+                debug('Waiting for last download to complete...');
+                return this.sleep();
+            }
+        }
+        return this.eachData(options);
     }
 
     fetchDataWorks(options) {

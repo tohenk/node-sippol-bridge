@@ -23,10 +23,10 @@
  * SOFTWARE.
  */
 
-const crypto = require('crypto');
 const util = require('util');
 const EventEmitter = require('events');
 const Queue = require('@ntlab/work/queue');
+const SippolUtil = require('./util');
 
 let dequeue;
 
@@ -127,7 +127,7 @@ class SippolDequeue extends EventEmitter {
 
     add(queue) {
         if (!queue.id) {
-            queue.setId(this.genId());
+            queue.setId(SippolUtil.genId());
         }
         this.queues.push(queue);
         this.queue.requeue([queue], queue.type == SippolQueue.QUEUE_CALLBACK ? true : false);
@@ -151,12 +151,6 @@ class SippolDequeue extends EventEmitter {
             this.last = queue;
         }
         return this;
-    }
-
-    genId() {
-        const shasum = crypto.createHash('sha1');
-        shasum.update(new Date().getTime().toString());
-        return shasum.digest('hex').substring(0, 8);
     }
 
     getStatus() {

@@ -7,11 +7,11 @@
   "license": "MIT",
   "dependencies": {
     "@ntlab/ntlib": "^2.0.0",
-    "@ntlab/webrobot": "^1.4.12",
+    "@ntlab/webrobot": "^1.4.13",
     "@ntlab/work": "^1.1.2",
     "debug": "^4.3.4",
     "easy-pdf-merge": "^0.2.6",
     "jszip": "^3.10.1",
-    "socket.io": "^4.5.2"
+    "socket.io": "^4.5.3"
   }
 }
