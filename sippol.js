@@ -726,18 +726,24 @@ class Sippol extends WebRobot {
                     case this.FETCH_DATA:
                         op.push([x => new Promise((resolve, reject) => {
                             const data = new SippolData();
-                            this.retrData(el, data, options.useForm)
-                                .then(okay => {
-                                    let added = okay ? true : false;
-                                    if (added && options.spptype && data.Syarat) {
-                                        added = options.spptype == data.Syarat;
+                            this.retrData(el, data, id => {
+                                let retval = true;
+                                items.forEach(item => {
+                                    if (item.Id == id) {
+                                        retval = false;
+                                        return true;
                                     }
-                                    delete data.Syarat;
-                                    if (added) items.push(data);
-                                    resolve();
-                                })
-                                .catch(err => reject(err))
-                            ;
+                                });
+                                return retval;
+                            }).then(okay => {
+                                let added = okay ? true : false;
+                                if (added && options.spptype && data.Syarat) {
+                                    added = options.spptype == data.Syarat;
+                                }
+                                delete data.Syarat;
+                                if (added) items.push(data);
+                                resolve();
+                            }).catch(err => reject(err));
                         }), x => x.res]);
                         break;
                     case this.FETCH_DOWNLOAD:
@@ -845,11 +851,12 @@ class Sippol extends WebRobot {
         ], {alwaysResolved: true});
     }
 
-    retrData(el, data, useForm) {
+    retrData(el, data, filter) {
         return this.works([
             [w => this.retrDataStatusFromRow(el)],
-            [w => this.retrDataFromForm(el, data), w => w.getRes(0) && useForm],
-            [w => this.retrDataFromRow(el, data), w => w.getRes(0) && !useForm],
+            [w => this.retrDataIdFromRow(el), w => w.getRes(0)],
+            [w => Promise.resolve(filter(w.getRes(1))), w => w.getRes(0)],
+            [w => this.retrDataFromForm(el, data), w => w.getRes(0) && w.getRes(2)],
         ]);
     }
 
