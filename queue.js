@@ -161,21 +161,17 @@ class SippolDequeue extends EventEmitter {
         });
         let queue = this.getCurrent();
         if (queue && queue.status == SippolQueue.STATUS_PROCESSING) {
-            status.current = queue.getInfo();
+            status.current = queue.toString();
         }
         queue = this.getLast();
         if (queue) {
-            status.last = {};
-            status.last.name = queue.getInfo();
-            if (queue.time) {
-                status.last.time = queue.time.toString();
-            }
-            status.last.status = queue.getStatusText();
-            if (this.last.result) {
-                status.last.result = util.inspect(queue.result);
-            }
+            status.last = queue.getLog();
         }
         return status;
+    }
+
+    getLogs() {
+        return this.queues.map(queue => queue.getLog());
     }
 
     buildInfo(info) {
@@ -216,14 +212,14 @@ class SippolQueue
     setStatus(status) {
         if (this.status != status) {
             this.status = status;
-            console.log('Queue %s %s', this.getInfo(), this.getStatusText());
+            console.log('Queue %s %s', this.toString(), this.getStatusText());
         }
     }
 
     setResult(result) {
         if (this.result != result) {
             this.result = result;
-            console.log('Queue %s result: %s', this.getInfo(), this.result instanceof Error ? this.result.toString() : this.result);
+            console.log('Queue %s result: %s', this.toString(), this.result instanceof Error ? this.result.toString() : this.result);
         }
     }
 
@@ -262,15 +258,6 @@ class SippolQueue
         }
     }
 
-    getInfo() {
-        let info = this.info;
-        if (!info && this.type == SippolQueue.QUEUE_CALLBACK) {
-            info = this.callback;
-        }
-        return info ? util.format('%s:%s (%s)', this.getTypeText(), this.id, info) :
-            util.format('%s:%s', this.getTypeText(), this.id);
-    }
-
     start() {
         this.setTime();
         this.setStatus(SippolQueue.STATUS_PROCESSING);
@@ -288,6 +275,35 @@ class SippolQueue
 
     finished() {
         return [SippolQueue.STATUS_DONE, SippolQueue.STATUS_ERROR, SippolQueue.STATUS_TIMED_OUT].indexOf(this.status) >= 0;
+    }
+
+    getLog() {
+        const res = {id: this.id, type: this.type};
+        const info = this.getInfo();
+        if (info) {
+            res.name = info;
+        }
+        if (this.time) {
+            res.time = this.time.toString();
+        }
+        res.status = this.status;
+        if (this.result) {
+            res.result = util.inspect(this.result);
+        }
+        return res;
+    }
+
+    getInfo() {
+        let info = this.info;
+        if (!info && this.type == SippolQueue.QUEUE_CALLBACK) {
+            info = this.callback;
+        }
+        return info;
+    }
+
+    toString() {
+        const info = this.getInfo();
+        return `${this.getTypeText()}:${this.id}${info ? ' ' + info : ''}`;
     }
 
     static create(type, data, callback = null) {

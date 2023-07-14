@@ -335,6 +335,11 @@ class App {
                 const res = SippolQueue.addQueue(queue);
                 socket.emit('download', res);
             })
+            .on('logs', data => {
+                if (data.id) {
+                    socket.emit('logs', {ref: data.id, logs: this.dequeue.getLogs()});
+                }
+            })
         ;
     }
 
