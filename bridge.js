@@ -384,15 +384,20 @@ class SippolBridge {
             [w => new Promise((resolve, reject) => {
                 const merge = require('easy-pdf-merge');
                 const q = new Queue(Object.keys(merged), docgroup => {
-                    const docfilename = docfname(docgroup.toLowerCase());
-                    merge(merged[docgroup], docfilename, err => {
-                        if (err) {
-                            console.error('Merge document %s failed with %s!', docfilename, err);
-                        } else {
-                            docs[docgroup] = docfilename;
-                        }
+                    if (merged[docgroup].length > 1) {
+                        const docfilename = docfname(docgroup.toLowerCase());
+                        merge(merged[docgroup], docfilename, err => {
+                            if (err) {
+                                console.error('Merge document %s failed with %s!', docfilename, err);
+                            } else {
+                                docs[docgroup] = docfilename;
+                            }
+                            q.next();
+                        });
+                    } else {
+                        docs[docgroup] = merged[docgroup][0];
                         q.next();
-                    });
+                    }
                 });
                 q.once('done', () => resolve());
             })],
