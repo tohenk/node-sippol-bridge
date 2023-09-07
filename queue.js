@@ -2,7 +2,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2022 Toha <tohenk@yahoo.com>
+ * Copyright (c) 2020-2023 Toha <tohenk@yahoo.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -23,6 +23,8 @@
  * SOFTWARE.
  */
 
+const fs = require('fs');
+const path = require('path');
 const util = require('util');
 const EventEmitter = require('events');
 const Queue = require('@ntlab/work/queue');
@@ -86,9 +88,11 @@ class SippolDequeue extends EventEmitter {
                 this.queue.next();
             }
             const f = () => {
+                let queue;
                 // check for timeout
-                let queue = this.getCurrent();
-                if (queue && queue.status == SippolQueue.STATUS_PROCESSING) {
+                const processing = this.queues.filter(queue => queue.status === SippolQueue.STATUS_PROCESSING);
+                if (processing.length) {
+                    queue = processing[0];
                     const t = new Date().getTime();
                     const d = t - queue.time.getTime();
                     const timeout = queue.data && queue.data.timeout != undefined ?
@@ -170,8 +174,57 @@ class SippolDequeue extends EventEmitter {
         return status;
     }
 
-    getLogs() {
-        return this.queues.map(queue => queue.getLog());
+    getLogs(raw = false) {
+        return this.queues.map(queue => queue.getLog(raw));
+    }
+
+    saveLogs() {
+        const logs = this.getLogs(true).filter(log => log.type !== SippolQueue.QUEUE_CALLBACK && [SippolQueue.STATUS_NEW, SippolQueue.STATUS_PROCESSING].indexOf(log.status) < 0);
+        if (logs.length) {
+            const queueDir = path.join(process.cwd(), 'queue');
+            if (!fs.existsSync(queueDir)) {
+                fs.mkdirSync(queueDir, {recursive: true});
+            }
+            let filename, seq = 0;
+            while (true) {
+                filename = path.join(queueDir, `queue${++seq}.log`);
+                if (!fs.existsSync(filename)) {
+                    break;
+                }
+            }
+            fs.writeFileSync(filename, JSON.stringify(logs, null, 2));
+        }
+    }
+
+    loadQueue() {
+        const filename = path.join(process.cwd(), 'queue', 'saved.queue');
+        if (fs.existsSync(filename) && typeof this.createQueue === 'function') {
+            const savedQueues = JSON.parse(fs.readFileSync(filename));
+            if (savedQueues) {
+                savedQueues.forEach(queue => this.createQueue(queue));
+            }
+            fs.unlinkSync(filename);
+        }
+    }
+
+    saveQueue() {
+        const queues = this.queues.filter(queue => queue.type !== SippolQueue.QUEUE_CALLBACK && queue.status === SippolQueue.STATUS_NEW);
+        if (queues.length) {
+            const savedQueues = queues.map(queue => {
+                return {
+                    type: queue.type,
+                    id: queue.id,
+                    data: queue.data,
+                    callback: queue.callback,
+                }
+            });
+            const queueDir = path.join(process.cwd(), 'queue');
+            if (!fs.existsSync(queueDir)) {
+                fs.mkdirSync(queueDir, {recursive: true});
+            }
+            const filename = path.join(queueDir, 'saved.queue');
+            fs.writeFileSync(filename, JSON.stringify(savedQueues, null, 2));
+        }
     }
 
     buildInfo(info) {
@@ -277,7 +330,7 @@ class SippolQueue
         return [SippolQueue.STATUS_DONE, SippolQueue.STATUS_ERROR, SippolQueue.STATUS_TIMED_OUT].indexOf(this.status) >= 0;
     }
 
-    getLog() {
+    getLog(raw = false) {
         const res = {id: this.id, type: this.type};
         const info = this.getInfo();
         if (info) {
@@ -288,7 +341,7 @@ class SippolQueue
         }
         res.status = this.status;
         if (this.result) {
-            res.result = util.inspect(this.result);
+            res.result = !raw && (Array.isArray(this.result) || typeof this.result === 'object') ? util.inspect(this.result) : this.result;
         }
         return res;
     }
@@ -352,6 +405,14 @@ class SippolQueue
             throw new Error('No dequeue instance has been created!');
         }
         return dequeue.add(queue);
+    }
+
+    static hasNewQueue(queue) {
+        if (dequeue) {
+            const queues = dequeue.queues.filter(q => q.type === queue.type && q.info === queue.info && q.status === SippolQueue.STATUS_NEW);
+            return queues.length ? true : false;
+        }
+        return false;
     }
 
     static get QUEUE_SPP() { return 'spp' }
