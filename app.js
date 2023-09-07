@@ -33,7 +33,7 @@ Cmd.addVar('username', 'u', 'Set login username', 'username');
 Cmd.addVar('password', 'p', 'Set login password', 'password');
 Cmd.addVar('profile', '', 'Use profile for operation', 'profile');
 Cmd.addBool('queue', 'q', 'Enable queue saving and loading');
-Cmd.addBool('nop', '', 'Do not process queue');
+Cmd.addBool('noop', '', 'Do not process queue');
 
 if (!Cmd.parse() || (Cmd.get('help') && usage())) {
     process.exit();
@@ -527,7 +527,7 @@ class App {
             bridge.queue = queue;
             queue.bridge = bridge;
             queue.ontimeout = () => bridge.sippol.stop();
-            if (Cmd.get('nop')) {
+            if (Cmd.get('noop')) {
                 return new Promise((resolve, reject) => {
                     setTimeout(() => resolve(`Queue ${queue.type}:${queue.id} handled by ${bridge.name}`), 60000);
                 });
