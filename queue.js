@@ -134,6 +134,7 @@ class SippolDequeue extends EventEmitter {
         }
         this.queues.push(queue);
         this.queue.requeue([queue], queue.type == SippolQueue.QUEUE_CALLBACK ? true : false);
+        this.queue.next();
         return {status: 'queued', id: queue.id};
     }
 
@@ -162,11 +163,11 @@ class SippolDequeue extends EventEmitter {
             total: this.queues.length,
             queue: this.queue.queues.length,
         });
-        let queue = this.getCurrent();
-        if (queue && queue.status == SippolQueue.STATUS_PROCESSING) {
-            status.current = queue.toString();
+        const processing = this.queues.filter(queue => queue.status === SippolQueue.STATUS_PROCESSING).map(queue => queue.toString());
+        if (processing.length) {
+            status.current = processing.join('<br/>');
         }
-        queue = this.getLast();
+        const queue = this.getLast();
         if (queue) {
             status.last = queue.getLog();
         }
@@ -406,9 +407,9 @@ class SippolQueue
         return dequeue.add(queue);
     }
 
-    static hasNewQueue(queue) {
+    static hasPendingQueue(queue) {
         if (dequeue) {
-            const queues = dequeue.queues.filter(q => q.type === queue.type && q.info === queue.info && q.status === SippolQueue.STATUS_NEW);
+            const queues = dequeue.queues.filter(q => q.type === queue.type && q.info === queue.info && [SippolQueue.STATUS_NEW, SippolQueue.STATUS_PROCESSING].indexOf(q.status) >= 0);
             return queues.length ? true : false;
         }
         return false;

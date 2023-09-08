@@ -153,7 +153,7 @@ class App {
                 if (data.reject !== undefined) {
                     queue.reject = data.reject;
                 }
-                if (queue.type === SippolQueue.QUEUE_SPP && SippolQueue.hasNewQueue(queue)) {
+                if (queue.type === SippolQueue.QUEUE_SPP && SippolQueue.hasPendingQueue(queue)) {
                     return {message: `SPP ${queue.info} sudah dalam antrian!`};
                 }
                 console.log('%s: %s', queue.type.toUpperCase(), queue.info);
