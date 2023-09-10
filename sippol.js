@@ -22,11 +22,12 @@
  * SOFTWARE.
  */
 
+const debug = require('debug')('sippol');
 const fs = require('fs');
+const util = require('util');
 const { By, Key } = require('selenium-webdriver');
 const Queue = require('@ntlab/work/queue');
 const WebRobot = require('@ntlab/webrobot');
-const debug = require('debug')('sippol');
 
 class Sippol extends WebRobot {
 
@@ -88,6 +89,7 @@ class Sippol extends WebRobot {
         });
         // add expected error
         WebRobot.expectErr(SippolStopError);
+        WebRobot.expectErr(SippolAnnouncedError);
     }
 
     pickPid(value) {
@@ -1009,7 +1011,7 @@ class Sippol extends WebRobot {
             [w => this.clickEditSppButton(w.getRes(0)), w => w.getRes(0)],
             [w => this.waitLoader(), w => w.getRes(0)],
             [w => this.fillSppForm(data), w => w.getRes(0)],
-            [w => Promise.reject('SPP with id ' + id + ' is not found!'), w => !w.getRes(0)],
+            [w => Promise.reject(SippolAnnouncedError.create('SPP with id ' + id + ' is not found!')), w => !w.getRes(0)],
         ]);
     }
 
@@ -1159,7 +1161,7 @@ class Sippol extends WebRobot {
                 w => w.getRes(0)],
             [w => this.uploadDocFiles(w.getRes(5), docs),
                 w => w.getRes(0)],
-            [w => Promise.reject('Unable to upload, SPP with id ' + id + ' is not found!'),
+            [w => Promise.reject(SippolAnnouncedError.create('Unable to upload, SPP with id ' + id + ' is not found!')),
                 w => !w.getRes(0)],
         ]);
     }
@@ -1261,4 +1263,19 @@ class SippolData {
 class SippolStopError extends Error {
 }
 
-module.exports = { Sippol, SippolData, SippolStopError };
+class SippolAnnouncedError extends Error {
+
+    toString() {
+        return this.message;
+    }
+
+    [util.inspect.custom](depth, options, inspect) {
+        return this.toString();
+    }
+
+    static create(message) {
+        return new SippolAnnouncedError(message);
+    }
+}
+
+module.exports = { Sippol, SippolData, SippolStopError, SippolAnnouncedError };

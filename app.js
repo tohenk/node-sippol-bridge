@@ -395,7 +395,7 @@ class App {
                 const res = this.dequeue.createQueue({
                     type: SippolQueue.QUEUE_LIST,
                     data: options,
-                    info: data.term,
+                    info: this.getDateInfo(options),
                     callback: socket.callback,
                 });
                 socket.emit('list', res);
@@ -406,7 +406,7 @@ class App {
                 const res = this.dequeue.createQueue({
                     type: SippolQueue.QUEUE_DOWNLOAD,
                     data: options,
-                    info: data.term,
+                    info: this.getDateInfo(options),
                     callback: socket.callback,
                 });
                 socket.emit('download', res);
@@ -451,6 +451,28 @@ class App {
                 }
             }
         });
+    }
+
+    getDateInfo(options) {
+        let res;
+        ['spp', 'spm', 'sp2d'].forEach(key => {
+            let value = options[key];
+            if (value) {
+                const values = [];
+                if (value instanceof Date) {
+                    values.push(value.toISOString());
+                }
+                if (value.from instanceof Date) {
+                    values.push(value.from.toISOString());
+                }
+                if (value.to instanceof Date) {
+                    values.push(value.to.toISOString());
+                }
+                res = `${key.toUpperCase()}: ${values.join(' - ')}`;
+                return true;
+            }
+        });
+        return res;
     }
 
     handleNotify() {

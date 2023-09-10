@@ -25,7 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const Queue = require('@ntlab/work/queue');
-const { Sippol } = require('./sippol');
+const { Sippol, SippolAnnouncedError } = require('./sippol');
 const SippolQueue = require('./queue');
 const SippolUtil = require('./util');
 const JSZip = require('jszip');
@@ -132,10 +132,12 @@ class SippolBridge {
             works.push(theworks);
         }
         return this.works(works, {
-            done: () => this.works([
-                [w => this.sippol.stop()],
-                [w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay))],
-            ])
+            done: err => {
+                return this.works([
+                    [w => this.sippol.stop()],
+                    [w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay))],
+                ]);
+            }
         });
     }
 
@@ -423,7 +425,7 @@ class SippolBridge {
                     .then(res => {
                         result = res;
                         if (res && queue.callback) {
-                            this.createCallback({Id: queue.data.Id, docs: res}, queue.callback);
+                            this.createCallback({Id: queue.data.Id, docs: res, year: queue.data.year}, queue.callback);
                         }
                         resolve();
                     })
@@ -445,6 +447,9 @@ class SippolBridge {
                         fs.unlinkSync(file);
                     }
                 });
+                if (result instanceof SippolAnnouncedError) {
+                    this.createCallback({Id: queue.data.Id, error: result.message, year: queue.data.year}, queue.callback);
+                }
                 resolve(result);
             })],
         ]);
