@@ -1,0 +1,12 @@
+{
+	"users": {
+		"user1": {
+			"username": "CHANGEME",
+			"password": "CHANGEME"
+		}
+	},
+	"roles": {
+		"4010410101": "user1",
+		"4010410102": "user1"
+	}
+}

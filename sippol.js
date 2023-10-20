@@ -61,8 +61,6 @@ class Sippol extends WebRobot {
         this.delay = this.options.delay || 500;
         this.opdelay = this.options.opdelay || 400;
         this.updelay = this.options.updelay || 30000;
-        this.username = this.options.username;
-        this.password = this.options.password;
         this.maps = this.options.maps || {};
         this.status = Object.freeze({
             SEMUA: 'spp-semua',
@@ -182,11 +180,7 @@ class Sippol extends WebRobot {
     }
 
     fillZero(value, len) {
-        let res = parseInt(value).toString();
-        while (res.length < len) {
-            res = '0' + res;
-        }
-        return res;
+        return parseInt(value).toString().padStart(len, '0');
     }
 
     getDocType(doc) {
@@ -229,22 +223,33 @@ class Sippol extends WebRobot {
         return this.close();
     }
 
-    login() {
+    login(username, password, force = true) {
         return this.works([
             [w => this.isLoggedIn(true)],
+            [w => this.logout(),
+                w => w.getRes(0) && force],
             [w => this.waitAndClick(By.xpath('//button[@ng-click="vm.login()"]')),
-                w => !w.getRes(0)],
+                w => !w.getRes(0) || force],
             [w => this.fillInForm([
-                        {target: By.id('username'), value: this.username},
-                        {target: By.id('password'), value: this.password},
+                        {target: By.id('username'), value: username},
+                        {target: By.id('password'), value: password},
                         //{target: By.id('rememberMe'), value: false}
                     ],
                     By.xpath('//h4[@data-translate="login.title"]'),
                     By.xpath('//button[@data-translate="login.form.button"]')
                 ),
-                w => !w.getRes(0)],
+                w => !w.getRes(0) || force],
             [w => this.waitLoader(),
-                w => !w.getRes(0)],
+                w => !w.getRes(0) || force],
+        ]);
+    }
+
+    logout() {
+        return this.works([
+            [w => this.findElement(By.id('account-menu'))],
+            [w => w.getRes(0).click()],
+            [w => this.findElement(By.id('logout'))],
+            [w => w.getRes(2).click()],
         ]);
     }
 

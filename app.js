@@ -29,8 +29,6 @@ Cmd.addBool('help', 'h', 'Show program usage').setAccessible(false);
 Cmd.addVar('config', 'c', 'Set configuration file', 'filename');
 Cmd.addVar('port', 'p', 'Set server port to listen', 'port');
 Cmd.addVar('url', '', 'Set SIPPOL url', 'url');
-Cmd.addVar('username', 'u', 'Set login username', 'username');
-Cmd.addVar('password', 'p', 'Set login password', 'password');
 Cmd.addVar('profile', '', 'Use profile for operation', 'profile');
 Cmd.addBool('queue', 'q', 'Enable queue saving and loading');
 Cmd.addBool('noop', '', 'Do not process queue');
@@ -48,7 +46,7 @@ const SippolNotifier = require('./notifier');
 
 class App {
 
-    VERSION = 'SIPPOL-BRIDGE-1.0'
+    VERSION = 'SIPPOL-BRIDGE-2.0'
 
     config = {}
     bridges = []
@@ -71,8 +69,6 @@ class App {
             }
         }
         if (Cmd.get('url')) this.config.url = Cmd.get('url');
-        if (Cmd.get('username')) this.config.username = Cmd.get('username');
-        if (Cmd.get('password')) this.config.password = Cmd.get('password');
         if (!this.config.workdir) this.config.workdir = __dirname;
         if (!this.config.downloaddir) this.config.downloaddir = path.join(this.config.workdir, 'download');
 
@@ -87,6 +83,12 @@ class App {
         if (fs.existsSync(filename)) {
             this.config.docs = JSON.parse(fs.readFileSync(filename));
             console.log('Document maps loaded from %s', filename);
+        }
+        // load roles
+        filename = path.join(__dirname, 'roles.json');
+        if (fs.existsSync(filename)) {
+            this.config.roles = JSON.parse(fs.readFileSync(filename));
+            console.log('Roles loaded from %s', filename);
         }
         // load profile
         this.config.profiles = {};
@@ -188,9 +190,6 @@ class App {
                 this.sessions[browser]++;
                 if (this.sessions[browser] > 1) config.session = 's' + this.sessions[browser];
             }
-            if (!config.username || !config.password) {
-                throw new Error(util.format('Unable to create bridge %s: username or password must be supplied!', name));
-            }
             const bridge = new SippolBridge(config);
             bridge.name = name;
             bridge.year = config.year;
@@ -262,6 +261,10 @@ class App {
 
     handleConnection(socket) {
         console.log('Client connected: %s', socket.id);
+        const unhandled = (event, msg) => {
+            console.log(msg);
+            socket.emit(event, {error: msg});
+        }
         socket
             .on('disconnect', () => {
                 console.log('Client disconnected: %s', socket.id);
@@ -285,6 +288,11 @@ class App {
                 }
                 socket.emit('setup', {version: this.VERSION});
             })
+            .on('logs', data => {
+                if (data.id) {
+                    socket.emit('logs', {ref: data.id, logs: this.dequeue.getLogs()});
+                }
+            })
             .on('spp', data => {
                 const res = this.dequeue.createQueue({
                     type: SippolQueue.QUEUE_SPP,
@@ -294,25 +302,22 @@ class App {
                 socket.emit('spp', res);
             })
             .on('upload', data => {
-                let res;
-                if (data.Id) {
-                    res = this.dequeue.createQueue({
+                if (data.Id && data.keg) {
+                    const res = this.dequeue.createQueue({
                         type: SippolQueue.QUEUE_UPLOAD,
                         data: data,
                         callback: socket.callback,
                     });
+                    socket.emit('upload', res);
                 } else {
-                    const msg = 'Ignoring upload without Id';
-                    console.log(msg);
-                    res = {error: msg}
+                    unhandled('upload', 'Ignoring upload without Id or keg');
                 }
-                socket.emit('upload', res);
             })
             .on('upload-part', data => {
-                let res;
-                if (data.Id) {
+                if (data.Id && data.keg) {
+                    let res;
                     if (this.uploads[data.Id] == undefined) {
-                        this.uploads[data.Id] = {Id: data.Id};
+                        this.uploads[data.Id] = {Id: data.Id, keg: data.keg};
                         if (data.year) this.uploads[data.Id].year = data.year;
                         if (data.info) this.uploads[data.Id].info = data.info;
                         if (data.term) this.uploads[data.Id].term = data.term;
@@ -321,8 +326,8 @@ class App {
                     let partComplete = false;
                     let key;
                     Object.keys(data).forEach(k => {
-                        if (['Id', 'info', 'term', 'year', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
-                            let buff = Buffer.from(data[k], 'base64');
+                        if (['Id', 'info', 'keg', 'term', 'year', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
+                            let buff = Buffer.from(data[k]);
                             if (this.uploads[data.Id][k] != undefined) {
                                 buff = Buffer.concat([this.uploads[data.Id][k], buff]);
                             }
@@ -352,68 +357,73 @@ class App {
                     } else {
                         res = {error: 'Document part not found for ' + data.Id};
                     }
+                    socket.emit('upload-part', res);
                 } else {
-                    const msg = 'Ignoring partial upload without Id';
-                    console.log(msg);
-                    res = {error: msg}
+                    unhandled('upload-part', 'Ignoring partial upload without Id or keg');
                 }
-                socket.emit('upload-part', res);
             })
             .on('query', data => {
-                if (data.notify) {
-                    const res = this.dequeue.createQueue({
-                        type: SippolQueue.QUEUE_QUERY,
-                        data: {year: data.year, term: data.term, notify: true},
-                        info: data.term,
-                        callback: socket.callback,
-                    });
-                    socket.emit('query', res);
-                } else {
-                    const f = () => new Promise((resolve, reject) => {
+                if (data.year && data.keg && data.term) {
+                    if (data.notify) {
                         const res = this.dequeue.createQueue({
                             type: SippolQueue.QUEUE_QUERY,
-                            data: {year: data.year, term: data.term},
+                            data: {year: data.year, keg: data.keg, term: data.term, notify: true},
                             info: data.term,
-                            resolve: resolve,
-                            reject: reject,
                             callback: socket.callback,
                         });
-                    });
-                    f()
-                        .then(items => {
-                            socket.emit('query', {result: items});
-                        })
-                        .catch(err => {
-                            socket.emit('query', {error: err instanceof Error ? err.message : err});
-                        })
-                    ;
+                        socket.emit('query', res);
+                    } else {
+                        const f = () => new Promise((resolve, reject) => {
+                            const res = this.dequeue.createQueue({
+                                type: SippolQueue.QUEUE_QUERY,
+                                data: {year: data.year, keg: data.keg, term: data.term},
+                                info: data.term,
+                                resolve: resolve,
+                                reject: reject,
+                                callback: socket.callback,
+                            });
+                        });
+                        f()
+                            .then(items => {
+                                socket.emit('query', {result: items});
+                            })
+                            .catch(err => {
+                                socket.emit('query', {error: err instanceof Error ? err.message : err});
+                            })
+                        ;
+                    }
+                } else {
+                    unhandled('query', 'Ignoring query without year, keg, or term');
                 }
             })
             .on('list', data => {
-                const options = {year: data.year, timeout: 0};
-                this.getDateForOptions(options, data);
-                const res = this.dequeue.createQueue({
-                    type: SippolQueue.QUEUE_LIST,
-                    data: options,
-                    info: this.getDateInfo(options),
-                    callback: socket.callback,
-                });
-                socket.emit('list', res);
+                if (data.year && data.keg) {
+                    const options = {year: data.year, keg: data.keg, timeout: 0};
+                    this.getDateForOptions(options, data);
+                    const res = this.dequeue.createQueue({
+                        type: SippolQueue.QUEUE_LIST,
+                        data: options,
+                        info: this.getDateInfo(options),
+                        callback: socket.callback,
+                    });
+                    socket.emit('list', res);
+                } else {
+                    unhandled('list', 'Ignoring list without year or keg');
+                }
             })
             .on('download', data => {
-                const options = {year: data.year, timeout: 0};
-                this.getDateForOptions(options, data);
-                const res = this.dequeue.createQueue({
-                    type: SippolQueue.QUEUE_DOWNLOAD,
-                    data: options,
-                    info: this.getDateInfo(options),
-                    callback: socket.callback,
-                });
-                socket.emit('download', res);
-            })
-            .on('logs', data => {
-                if (data.id) {
-                    socket.emit('logs', {ref: data.id, logs: this.dequeue.getLogs()});
+                if (data.year && data.keg) {
+                    const options = {year: data.year, keg: data.keg, timeout: 0};
+                    this.getDateForOptions(options, data);
+                    const res = this.dequeue.createQueue({
+                        type: SippolQueue.QUEUE_DOWNLOAD,
+                        data: options,
+                        info: this.getDateInfo(options),
+                        callback: socket.callback,
+                    });
+                    socket.emit('download', res);
+                } else {
+                    unhandled('download', 'Ignoring list without year or keg');
                 }
             })
         ;

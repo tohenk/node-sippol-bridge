@@ -40,6 +40,8 @@ class SippolBridge {
         this.sippol = new Sippol(this.getOptions(options));
         this.state = this.STATE_NONE;
         this.works = this.sippol.works;
+        this.roles = options.roles.roles || {};
+        this.users = options.roles.users || {};
     }
 
     getOptions(options) {
@@ -118,15 +120,19 @@ class SippolBridge {
         return this.sippol.sleep(ms);
     }
 
-    do(theworks, status) {
+    do(theworks, options) {
+        options = options || {};
         const works = [
-            [w => this.sippol.start()],
-            [w => this.sippol.showJenis('LS')],
-            [w => this.sippol.showData(status)],
-            [w => this.sippol.sleep(this.sippol.opdelay)],
+            [w => this.sippol.open()],
+            [w => this.sippol.waitLoader()],
+            [w => this.doAs(options.role), w => options.role],
+            [w => this.sippol.isLoggedIn(), w => options.role],
+            [w => this.sippol.showJenis('LS'), w => options.role],
+            [w => this.sippol.showData(options.status), w => options.role],
+            [w => this.sippol.sleep(this.sippol.opdelay), w => options.role],
         ];
         if (Array.isArray(theworks)) {
-            Array.prototype.push.apply(works, theworks);
+            works.push(...theworks);
         }
         if (typeof theworks == 'function') {
             works.push(theworks);
@@ -141,11 +147,46 @@ class SippolBridge {
         });
     }
 
+    doAs(role) {
+        const user = this.roles[role];
+        if (!user) {
+            return Promise.reject(`Role not found: ${role}!`);
+        }
+        const cred = this.users[user];
+        if (!cred) {
+            return Promise.reject(`User not found: ${user}!`);
+        }
+        return this.sippol.login(cred.username, cred.password);
+    }
+
+    getRoleFromKeg(options) {
+        if (options.keg) {
+            if (!options.role) {
+                options.role = options.keg;
+            }
+            delete options.keg;
+        }
+    }
+
+    getRoleFromQueue(queue) {
+        const res = {};
+        if (queue.data.keg) {
+            res.role = queue.data.keg;
+        } else {
+            const role = queue.getMappedData('info.role');
+            if (role) {
+                res.role = role;
+            }
+        }
+        return res;
+    }
+
     list(options) {
         options = options || {};
         if (options.clear) this.items = {};
         if (this.spptype) options.spptype = this.spptype;
-        return this.do(w => this.sippol.fetchData(options), options.status);
+        this.getRoleFromKeg(options);
+        return this.do(w => this.sippol.fetchData(options), options);
     }
 
     getPenerima(penerima) {
@@ -174,9 +215,9 @@ class SippolBridge {
     }
 
     processItemsWithLimit(items, callback, limit) {
-        let maxItems = limit || 100;
+        const maxItems = limit || 100;
         let count = items.length;
-        let n = maxItems > 0 ? Math.ceil(count / maxItems) : 1;
+        const n = maxItems > 0 ? Math.ceil(count / maxItems) : 1;
         let pos = 0;
         const q = new Queue(Array.from({length: n}), i => {
             let num = Math.min(maxItems > 0 ? maxItems : count, count);
@@ -199,7 +240,7 @@ class SippolBridge {
                 })
                 .catch(err => reject(err))
             ;
-        }));
+        }), this.getRoleFromQueue(queue));
     }
 
     createSpp(queue) {
@@ -267,7 +308,7 @@ class SippolBridge {
                     .catch(err => reject(err))
                 ;
             })],
-        ]);
+        ], this.getRoleFromQueue(queue));
     }
 
     listSpp(queue) {
@@ -437,10 +478,9 @@ class SippolBridge {
             })],
             // cleanup files
             [w => new Promise((resolve, reject) => {
-                const files = [];
-                Array.prototype.push.apply(files, Object.values(docs));
+                const files = Object.values(docs);
                 Object.values(merged).forEach(docfiles => {
-                    Array.prototype.push.apply(files, docfiles);
+                    files.push(...docfiles);
                 });
                 files.forEach(file => {
                     if (fs.existsSync(file)) {
@@ -452,7 +492,7 @@ class SippolBridge {
                 }
                 resolve(result);
             })],
-        ]);
+        ], this.getRoleFromQueue(queue));
     }
 
     saveDoc(filename, data) {

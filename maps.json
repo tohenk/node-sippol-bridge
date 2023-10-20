@@ -1,4 +1,7 @@
 {
+	"info": {
+		"role": "KEG"
+	},
 	"spp": {
 		"#field_tglSpp": "TGL_SPP",
 		"+jenis": "number:1",

@@ -7,10 +7,8 @@
         "readinessTimeout":60000
     },
     "bridges": {
-        "sippol-2022": {
-            "username":"CHANGEME",
-            "password":"CHANGEME",
-            "year":2022
+        "sippol-2023": {
+            "year":2023
         }
     }
 }
