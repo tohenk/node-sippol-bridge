@@ -281,7 +281,7 @@ class Sippol extends WebRobot {
         }
         return new Promise((resolve, reject) => {
             let shown = false;
-            let t = Date.now();
+            const t = Date.now();
             const f = () => {
                 this.works([
                     [w => this.findElements(data)],
@@ -894,9 +894,9 @@ class Sippol extends WebRobot {
             [w => this.click({el: w.getRes(0), data: By.xpath('//button[@class="close"]')})],
             // parse data
             [w => new Promise((resolve, reject) => {
-                let pid = w.getRes(1)[0];
-                let values = w.getRes(2);
-                let cancelled = w.getRes(4);
+                const pid = w.getRes(1)[0];
+                const values = w.getRes(2);
+                const cancelled = w.getRes(4);
                 data.Id = this.pickPid(pid);
                 data.Kode = this.pickStr(values.kode);
                 data.Penerima = this.pickStr(values.penerima);
@@ -950,8 +950,8 @@ class Sippol extends WebRobot {
                 By.xpath('./td[7]/strong'),                                       // Nominal
             ], el)],
             [w => new Promise((resolve, reject) => {
-                let id = w.getRes(0);
-                let values = w.getRes(1);
+                const id = w.getRes(0);
+                const values = w.getRes(1);
                 data.Id = id;
                 data.SPPNomor = this.pickNumber(values[0]);
                 data.SPPTanggal = this.pickDate(values[1]);
@@ -1033,16 +1033,19 @@ class Sippol extends WebRobot {
     }
 
     fillSppForm(data) {
-        let works = [];
-        let tabs = ['spp', 'penerima', 'gaji', 'rincian', 'spm', 'sp2d', 'tu'];
-        let forms = this.getSppFormData(data);
+        const works = [];
+        const tabs = ['spp', 'penerima', 'gaji', 'rincian', 'spm', 'sp2d', 'tu'];
+        const forms = this.getSppFormData(data);
         for (let key in forms) {
-            let tabIdx = tabs.indexOf(key);
-            let xpath = By.xpath('//div[@id="agrTab"]/ul/li[@index="' + tabIdx + '"]/a');
+            const tabIdx = tabs.indexOf(key);
+            if (tabIdx < 0) {
+                continue;
+            }
+            const xpath = By.xpath('//div[@id="agrTab"]/ul/li[@index="' + tabIdx + '"]/a');
             works.push([w => this.waitAndClick(xpath)]);
             if (key == 'rincian') {
                 // process only once
-                let idx = works.length;
+                const idx = works.length;
                 works.push([w => this.getDriver().findElements(By.xpath('//tr[@ng-repeat="trsRek in vm.trsReks track by trsRek.id"]'))]);
                 works.push([w => this.waitAndClick(By.xpath('//button[@ng-click="vm.trsRekAdd()"]')), w => w.getRes(idx).length == 0]);
                 works.push([w => this.fillInForm(forms[key],
@@ -1059,7 +1062,7 @@ class Sippol extends WebRobot {
     }
 
     getSppFormData(data) {
-        let forms = {};
+        const forms = {};
         for (let key in this.maps) {
             forms[key] = this.getMappedFormData(data, this.maps[key]);
         }
@@ -1067,9 +1070,9 @@ class Sippol extends WebRobot {
     }
 
     getMappedFormData(data, maps) {
-        let result = [];
+        const result = [];
         for (let key in maps) {
-            let mapping = {};
+            const mapping = {};
             let identifier = key;
             let addwait = false;
             if (identifier.substring(0, 1) == '+') {
@@ -1088,14 +1091,14 @@ class Sippol extends WebRobot {
             }
             // handle tgl
             if (identifier.indexOf('tgl') >= 0 && typeof value == 'string') {
-                let p = value.indexOf(' ');
+                const p = value.indexOf(' ');
                 if (p > 0) {
                     value = value.substring(0, p);
                 }
             }
             // handle rek bank
             if ((identifier == 'bank' || identifier == 'bankCab') && data[maps.bank]) {
-                let xvalue = data[maps.bank];
+                const xvalue = data[maps.bank];
                 let matches;
                 if (matches = xvalue.toUpperCase().match(/(CABANG|CAPEM)/)) {
                     if (identifier == 'bank') {
@@ -1182,7 +1185,7 @@ class Sippol extends WebRobot {
                     [w => el.findElement(By.xpath('./span[contains(@class,"glyphicon-download")]'))],
                     [w => w.getRes(1).isDisplayed()],
                     [w => new Promise((resolve, reject) => {
-                        let doctype = this.getDocType(w.getRes(0));
+                        const doctype = this.getDocType(w.getRes(0));
                         if (!doctype) {
                             debug('%s: document not available!', w.getRes(0));
                             return resolve();
