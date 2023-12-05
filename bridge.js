@@ -25,7 +25,8 @@
 const fs = require('fs');
 const path = require('path');
 const Queue = require('@ntlab/work/queue');
-const { Sippol, SippolAnnouncedError } = require('./sippol');
+const { SippolAnnouncedError } = require('./sippol');
+const { SippolSpp } = require('./spp');
 const SippolQueue = require('./queue');
 const SippolUtil = require('./util');
 const JSZip = require('jszip');
@@ -37,7 +38,7 @@ class SippolBridge {
     STATE_OPERATIONAL = 3
 
     constructor(options) {
-        this.sippol = new Sippol(this.getOptions(options));
+        this.sippol = new SippolSpp(this.getOptions(options));
         this.state = this.STATE_NONE;
         this.works = this.sippol.works;
         this.roles = options.roles.roles || {};
@@ -127,7 +128,7 @@ class SippolBridge {
             [w => this.sippol.waitLoader()],
             [w => this.doAs(options.role), w => options.role],
             [w => this.sippol.isLoggedIn(), w => options.role],
-            [w => this.sippol.showJenis('LS'), w => options.role],
+            [w => this.sippol.showJenis('LS - Langsung'), w => options.role],
             [w => this.sippol.showData(options.status), w => options.role],
             [w => this.sippol.sleep(this.sippol.opdelay), w => options.role],
         ];
@@ -186,14 +187,14 @@ class SippolBridge {
         if (options.clear) this.items = {};
         if (this.spptype) options.spptype = this.spptype;
         this.getRoleFromKeg(options);
-        return this.do(w => this.sippol.fetchData(options), options);
+        return this.do(w => this.sippol.fetch(options), options);
     }
 
     getPenerima(penerima) {
         return this.works([
-            [w => this.sippol.filterData(penerima, this.sippol.DATA_PENERIMA)],
+            [w => this.sippol.filter(penerima, this.sippol.DATA_PENERIMA)],
             [w => this.sippol.sleep(this.sippol.opdelay)],
-            [w => this.sippol.fetchData()],
+            [w => this.sippol.fetch()],
         ]);
     }
 
@@ -448,7 +449,7 @@ class SippolBridge {
             [w => new Promise((resolve, reject) => {
                 const term = queue.data.term ? queue.data.term : queue.data.info;
                 if (!term) return resolve();
-                this.sippol.filterData(term, this.sippol.DATA_PENERIMA)
+                this.sippol.filter(term, this.sippol.DATA_PENERIMA)
                     .then(() => resolve())
                     .catch(() => {
                         this.sippol.resetFilter()
