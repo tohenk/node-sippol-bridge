@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-const { Sippol, SippolPaginator, SippolAnnouncedError } = require('./sippol');
+const { Sippol, SippolPaginator, SippolAnnouncedError } = require('.');
 const { By, Key, WebElement } = require('selenium-webdriver');
 const Queue = require('@ntlab/work/queue');
 const debug = require('debug')('sippol:spp');
