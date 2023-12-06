@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-const { Sippol, SippolPaginator, SippolAnnouncedError } = require('.');
+const { Sippol, SippolPaginator, SippolDataFetcher, SippolAnnouncedError } = require('.');
 const { By, Key, WebElement } = require('selenium-webdriver');
 const Queue = require('@ntlab/work/queue');
 const debug = require('debug')('sippol:spp');
@@ -80,28 +80,7 @@ class SippolSpp extends Sippol {
             PAKTA: 'Pakta Integritas',
             LAIN: 'Dokumen kelengkapan lainnya',
         });
-        // provide fetch default options
-        this.onFetchOptions = options => {
-            if (options.mode === undefined) {
-                options.mode = this.FETCH_DATA;
-            }
-            Object.assign(options, {
-                dates: {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'}
-            });
-            // add a pause when downloading
-            if (options.mode === this.FETCH_DOWNLOAD) {
-                options.finalize = () => {
-                    debug('Waiting for last download to complete...');
-                    return this.sleep();
-                }
-            }
-            debug(`Fetch mode set to ${options.mode === this.FETCH_DATA ? 'DATA' : 'DOWNLOAD'}...`);
-        }
-    }
-
-    reset() {
-        delete this._m;
-        debug('Reset done');
+        this.fetcher = new SippolSppDataFetcher(this);
     }
 
     /**
@@ -198,79 +177,6 @@ class SippolSpp extends Sippol {
             [w => w.getRes(0).getAttribute('title')],
             [w => Promise.resolve(this.pickPid(w.getRes(1)))],
         ]);
-    }
-
-    fetchWorks(options) {
-        const works = super.fetchWorks(options);
-        const filters = {spp: this.DATA_SPP, spm: this.DATA_SPM, sp2d: this.DATA_SP2D};
-        let sortkey;
-        Object.keys(filters).forEach(key => {
-            const value = options[key];
-            let sorted;
-            if (value instanceof Date || (typeof value === 'object' && value.from instanceof Date)) {
-                sorted = SippolPaginator.SORT_ASCENDING;
-            }
-            if (sorted) {
-                works.push([w => this.paginator.sort(this.dataKey(filters[key]), sorted)]);
-                sortkey = key;
-            }
-        });
-        if (sortkey) {
-            const status = {spp: this.status.SPM, spm: this.status.SP2D, sp2d: this.status.SP2D_CAIR};
-            if (status[sortkey]) {
-                works.unshift([w => this.showData(status[sortkey])]);
-            }
-        }
-        return works;
-    }
-
-    fetchRunWorks(el, items, options) {
-        const works = super.fetchRunWorks(el, items, options);
-        switch (options.mode) {
-            case this.FETCH_DATA:
-                works.push([x => new Promise((resolve, reject) => {
-                    const data = new SippolData();
-                    this.retrData(el, data, id => {
-                        let retval = true;
-                        items.forEach(item => {
-                            if (item.Id == id) {
-                                retval = false;
-                                return true;
-                            }
-                        });
-                        return retval;
-                    }).then(okay => {
-                        let added = okay ? true : false;
-                        if (added && options.spptype && data.Syarat) {
-                            added = options.spptype == data.Syarat;
-                        }
-                        delete data.Syarat;
-                        if (added) {
-                            items.push(data);
-                        }
-                        resolve();
-                    }).catch(err => reject(err));
-                }), x => x.res]);
-                break;
-            case this.FETCH_DOWNLOAD:
-                works.push([x => new Promise((resolve, reject) => {
-                    this.saveSpp(el)
-                        .then(res => {
-                            if (res) {
-                                items.push(res);
-                            }
-                            resolve();
-                        })
-                        .catch(err => reject(err))
-                    ;
-                }), x => x.res]);
-                break;
-        }
-        return works;
-    }
-
-    fetchRunMatchSelector(key) {
-        return By.xpath(`.//span[@ng-show="spp.${key}"]`);
     }
 
     /**
@@ -771,6 +677,102 @@ class SippolSpp extends Sippol {
             [w => Promise.resolve(w.getRes(3)),
                 w => index < w.getRes(0).length],
         ]);
+    }
+}
+
+class SippolSppDataFetcher extends SippolDataFetcher {
+
+    onFetchOptions(options) {
+        if (options.mode === undefined) {
+            options.mode = this.parent.FETCH_DATA;
+        }
+        options.dates = {spp: 'tglSpp', spm: 'tglSpm', sp2d: 'tglSp2d'};
+        // add a pause when downloading
+        if (options.mode === this.parent.FETCH_DOWNLOAD) {
+            options.finalize = () => {
+                debug('Waiting for last download to complete...');
+                return this.parent.sleep();
+            }
+        }
+        debug(`Fetch mode set to ${options.mode === this.parent.FETCH_DATA ? 'DATA' : 'DOWNLOAD'}...`);
+    }
+
+    fetchWorks(options) {
+        const works = super.fetchWorks(options);
+        const filters = {spp: this.parent.DATA_SPP, spm: this.parent.DATA_SPM, sp2d: this.parent.DATA_SP2D};
+        let sortkey;
+        Object.keys(filters).forEach(key => {
+            const value = options[key];
+            let sorted;
+            if (value instanceof Date || (typeof value === 'object' && value.from instanceof Date)) {
+                sorted = SippolPaginator.SORT_ASCENDING;
+            }
+            if (sorted) {
+                works.push([w => this.paginator.sort(this.parent.dataKey(filters[key]), sorted)]);
+                sortkey = key;
+            }
+        });
+        if (sortkey) {
+            const status = {spp: this.parent.status.SPM, spm: this.parent.status.SP2D, sp2d: this.parent.status.SP2D_CAIR};
+            if (status[sortkey]) {
+                works.unshift([w => this.parent.showData(status[sortkey])]);
+            }
+        }
+        return works;
+    }
+
+    fetchRunWorks(el, items, options) {
+        const works = super.fetchRunWorks(el, items, options);
+        switch (options.mode) {
+            case this.parent.FETCH_DATA:
+                works.push([x => new Promise((resolve, reject) => {
+                    const data = new SippolData();
+                    this.parent.retrData(el, data, id => {
+                        let retval = true;
+                        items.forEach(item => {
+                            if (item.Id == id) {
+                                retval = false;
+                                return true;
+                            }
+                        });
+                        return retval;
+                    }).then(okay => {
+                        let added = okay ? true : false;
+                        if (added && options.spptype && data.Syarat) {
+                            added = options.spptype == data.Syarat;
+                        }
+                        delete data.Syarat;
+                        if (added) {
+                            items.push(data);
+                        }
+                        resolve();
+                    }).catch(err => reject(err));
+                }), x => x.res]);
+                break;
+            case this.parent.FETCH_DOWNLOAD:
+                works.push([x => new Promise((resolve, reject) => {
+                    this.parent.saveSpp(el)
+                        .then(res => {
+                            if (res) {
+                                items.push(res);
+                            }
+                            resolve();
+                        })
+                        .catch(err => reject(err))
+                    ;
+                }), x => x.res]);
+                break;
+        }
+        return works;
+    }
+
+    fetchRunMatchSelector(key) {
+        return By.xpath(`.//span[@ng-show="spp.${key}"]`);
+    }
+
+    fetchRunMatchDate(value) {
+        const values = value.split(',');
+        return this.parent.pickDate(values[1], true);
     }
 }
 

@@ -36,10 +36,6 @@ const debug = require('debug')('sippol');
  */
 class Sippol extends WebRobot {
 
-    DATE_MATCH = 1
-    DATE_BEFORE = 2
-    DATE_AFTER = 3
-
     DEFAULT_PATH = '#/keuda-spp'
 
     initialize() {
@@ -47,16 +43,18 @@ class Sippol extends WebRobot {
             throw new Error('SIPPOL url must be supplied!');
         }
         this.toolbar = new SippolToolbar(this);
-        this.paginator = new SippolPaginator(this);
         this.delay = this.options.delay || 500;
         this.opdelay = this.options.opdelay || 400;
         this.updelay = this.options.updelay || 30000;
+        this.configure();
         WebRobot.expectErr(SippolStopError);
         WebRobot.expectErr(SippolAnnouncedError);
         this.onOpen = () => {
             this.reset();
         }
-        this.configure();
+        if (!this.fetcher) {
+            this.fetcher = new SippolDataFetcher(this);
+        }
     }
 
     /**
@@ -69,6 +67,7 @@ class Sippol extends WebRobot {
      * Do reset on open url.
      */
     reset() {
+        this.fetcher.reset();
     }
 
     /**
@@ -156,7 +155,7 @@ class Sippol extends WebRobot {
      * @returns {Date}
      */
     decodeDate(value) {
-        const dtpart = value.split('/');
+        const dtpart = value.split(value.indexOf('/') > 0 ? '/' : '-');
         if (dtpart.length === 3) {
             if (dtpart[2].length < 4) {
                 dtpart[2] = new Date().getFullYear().toString().substr(0, 2) + dtpart[2];
@@ -164,49 +163,6 @@ class Sippol extends WebRobot {
             value = new Date(parseInt(dtpart[2]), parseInt(dtpart[1]) - 1, parseInt(dtpart[0]));
         }
         return value;
-    }
-
-    /**
-     * Get dates from values.
-     *
-     * @param {object} values Values
-     * @returns {Array<Date>}
-     */
-    getDates(values) {
-        const result = [];
-        if (values.dates) {
-            Object.keys(values.dates).forEach(key => {
-                const value = values[key];
-                const d = {};
-                if (value instanceof Date) {
-                    d.from = value;
-                } else if (typeof value === 'object' && value.from instanceof Date) {
-                    d.from = value.from;
-                    if (value.to instanceof Date) {
-                        d.to = value.to;
-                    }
-                }
-                if (d.from) {
-                    result[values.dates[key]] = d;
-                }
-            });
-        }
-        return result;
-    }
-
-    /**
-     * Get max date.
-     *
-     * @param {Date} dateRef Reference date
-     * @param {Date} now 
-     * @returns {Date}
-     */
-    getMaxDate(dateRef, now) {
-        const dateMax = new Date(dateRef.getFullYear(), 11, 31);
-        if (now === undefined) {
-            now = new Date();
-        }
-        return now <= dateMax ? now : dateMax;
     }
 
     /**
@@ -426,7 +382,7 @@ class Sippol extends WebRobot {
      */
     locate(id) {
         let match;
-        return this.paginator.each({
+        return this.fetcher.paginator.each({
             work: el => {
                 match = el;
                 return [];
@@ -466,155 +422,13 @@ class Sippol extends WebRobot {
     }
 
     /**
-     * Iterate all data.
+     * Fetch all data.
      *
      * @param {object} options Parameters
      * @returns {Promise}
      */
     fetch(options) {
-        options = options || {};
-        if (typeof this.onFetchOptions === 'function') {
-            this.onFetchOptions(options);
-        }
-        const items = [];
-        const works = this.fetchWorks(options);
-        const dates = this.getDates(options);
-        const keys = Object.keys(dates);
-        if (keys.length) {
-            const from = dates[keys[0]].from;
-            const to = dates[keys[0]].to ? this.getMaxDate(from, dates[keys[0]].to) : this.getMaxDate(from);
-            const months = [];
-            const names = ['Januari', 'Pebruari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'Nopember', 'Desember'];
-            for (let i = from.getMonth(); i <= to.getMonth(); i++) {
-                months.push(names[i]);
-            }
-            works.push([w => new Promise((resolve, reject) => {
-                let i = 0;
-                options.n = months.length;
-                const q = new Queue(months, m => {
-                    options.i = ++i;
-                    this.works([
-                        [x => this.toolbar.navigateMenuByTitle(this._m ? this._m : 'BLN', m, {deep: true, wait: true})],
-                        [x => Promise.resolve(this._m = m)],
-                        [x => this.fetchRun(options, items)],
-                    ])
-                    .then(() => q.next())
-                    .catch(err => reject(err));
-                });
-                q.once('done', () => resolve(items));
-            })]);
-        } else {
-            Object.assign(options, {n: 1, i: 1});
-            works.push([w => this.fetchRun(options, items)]);
-        }
-        return this.works(works);
-    }
-
-    /**
-     * A list of works for fetch.
-     *
-     * @param {object} options Parameters
-     * @returns {Array}
-     */
-    fetchWorks(options) {
-        return [];
-    }
-
-    /**
-     * A run for fetch.
-     *
-     * @param {object} options Parameters
-     * @param {Array} items Collected result
-     * @returns {Promise}
-     */
-    fetchRun(options, items) {
-        Object.assign(options, {
-            work: el => this.fetchRunWorks(el, items, options),
-            done: () => Promise.resolve(items),
-        });
-        return this.paginator.each(options);
-    }
-
-    /**
-     * A list of works for each fetch run.
-     *
-     * @param {WebElement} el Row element
-     * @param {Array} items Collected result
-     * @param {object} options Parameters
-     * @returns {Array}
-     */
-    fetchRunWorks(el, items, options) {
-        const works = [];
-        const dates = this.getDates(options);
-        Object.keys(dates).forEach(key => {
-            if (dates[key].from) {
-                works.push([w => new Promise((resolve, reject) => {
-                    this.fetchRunMatch(el, key, dates[key].from, dates[key].to)
-                        .then(result => {
-                            switch (result) {
-                                case this.DATE_MATCH:
-                                    return resolve(true);
-                                case this.DATE_BEFORE:
-                                    return resolve(false);
-                                default:
-                                    reject(new SippolStopError());
-                            }
-                        })
-                        .catch(err => reject(err))
-                    ;
-                })]);
-            }
-        });
-        if (!works.length) {
-            works.push([w => Promise.resolve(true)]);
-        }
-        return works;
-    }
-
-    /**
-     * Perform check for each row for date range match.
-     *
-     * @param {WebElement} el Row element
-     * @param {string} key Row key
-     * @param {Date} from Start date
-     * @param {Date} to End date 
-     * @returns {Promise}
-     */
-    fetchRunMatch(el, key, from, to) {
-        return this.works([
-            [w => el.findElement(this.fetchRunMatchSelector(key))],
-            [w => w.getRes(0).isDisplayed()],
-            [w => Promise.resolve(this.DATE_BEFORE), w => !w.getRes(1)],
-            [w => w.getRes(0).getText(), w => w.getRes(1)],
-            [w => new Promise((resolve, reject) => {
-                const value = w.res;
-                const s = value.split(',');
-                const dt = this.pickDate(s[1], true);
-                let result;
-                if (!to) {
-                    result = dt >= from ? this.DATE_MATCH : this.DATE_AFTER;
-                } else {
-                    if (from <= dt && dt <= to) {
-                        result = this.DATE_MATCH;
-                    } else if (dt < from) {
-                        result = this.DATE_BEFORE;
-                    } else {
-                        result = this.DATE_AFTER;
-                    }
-                }
-                resolve(result);
-            }), w => w.res],
-        ], {alwaysResolved: true});
-    }
-
-    /**
-     * Get each row key selector for match comparison.
-     *
-     * @param {string} key Row key
-     * @returns {By}
-     */
-    fetchRunMatchSelector(key) {
-        throw new Error('Selector not implemented!');
+        return this.fetcher.fetch(options);
     }
 }
 
@@ -736,6 +550,10 @@ class SippolToolbar {
  * A data pagination for iterating Sippol data.
  */
 class SippolPaginator {
+
+    root = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table'
+    rowSelector = '/tbody/tr[@ng-repeat-start]'
+    pagerSelector = '/tfoot/tr/td/ul[contains(@class,"pagination")]'
 
     /**
      * Constructor.
@@ -1092,13 +910,18 @@ class SippolPaginator {
      * Iterate each data in pagination.
      *
      * @param {object} options Iterate data
+     * @param {string|undefined} options.root Root selector which usually include table
+     * @param {string|undefined} options.rowSelector Row selector relative to root
+     * @param {string|undefined} options.pagerSelector Pagination selector relative to root
      * @returns {Promise}
      */
     each(options) {
-        const xpath = '//div[@class="container-fluid"]/div/div[@class="row"]/div[5]/div/table';
+        const root = options.root ? options.root : this.root;
+        const rowSelector = options.rowSelector ? options.rowSelector : this.rowSelector;
+        const pagerSelector = options.pagerSelector ? options.pagerSelector : this.pagerSelector;
         Object.assign(options, {
-            selector: By.xpath(xpath + '/tbody/tr[@ng-repeat-start]'),
-            pager: By.xpath(xpath + '/tfoot/tr/td/ul[contains(@class,"pagination")]'),
+            selector: By.xpath(root + rowSelector),
+            pager: By.xpath(root + pagerSelector),
             info: el => this.parent.getRowId(el),
             works: el => options.work(el),
         });
@@ -1111,6 +934,243 @@ class SippolPaginator {
 
     static get SORT_DESCENDING() {
         return 2;
+    }
+}
+
+/**
+ * A data fetcher.
+ */
+class SippolDataFetcher {
+
+    DATE_MATCH = 1
+    DATE_BEFORE = 2
+    DATE_AFTER = 3
+
+    /**
+     * Constructor.
+     *
+     * @param {Sippol} parent Parent
+     */
+    constructor(parent) {
+        this.parent = parent;
+        this.paginator = new SippolPaginator(parent);
+        this.initialize();
+    }
+
+    /**
+     * Do initialization.
+     */
+    initialize() {
+    }
+
+    /**
+     * Get dates from values.
+     *
+     * @param {object} values Values
+     * @returns {Array<Date>}
+     */
+    getDates(values) {
+        const result = [];
+        if (values.dates) {
+            Object.keys(values.dates).forEach(key => {
+                const value = values[key];
+                const d = {};
+                if (value instanceof Date) {
+                    d.from = value;
+                } else if (typeof value === 'object' && value.from instanceof Date) {
+                    d.from = value.from;
+                    if (value.to instanceof Date) {
+                        d.to = value.to;
+                    }
+                }
+                if (d.from) {
+                    result[values.dates[key]] = d;
+                }
+            });
+        }
+        return result;
+    }
+
+    /**
+     * Get max date.
+     *
+     * @param {Date} dateRef Reference date
+     * @param {Date} now 
+     * @returns {Date}
+     */
+    getMaxDate(dateRef, now) {
+        const dateMax = new Date(dateRef.getFullYear(), 11, 31);
+        if (now === undefined) {
+            now = new Date();
+        }
+        return now <= dateMax ? now : dateMax;
+    }
+
+    /**
+     * Iterate all data.
+     *
+     * @param {object} options Parameters
+     * @returns {Promise}
+     */
+    fetch(options) {
+        options = options || {};
+        if (typeof this.onFetchOptions === 'function') {
+            this.onFetchOptions(options);
+        }
+        const items = [];
+        const works = this.fetchWorks(options);
+        const dates = this.getDates(options);
+        const keys = Object.keys(dates);
+        if (keys.length) {
+            const from = dates[keys[0]].from;
+            const to = dates[keys[0]].to ? this.getMaxDate(from, dates[keys[0]].to) : this.getMaxDate(from);
+            const months = [];
+            const names = ['Januari', 'Pebruari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'Nopember', 'Desember'];
+            for (let i = from.getMonth(); i <= to.getMonth(); i++) {
+                months.push(names[i]);
+            }
+            works.push([w => new Promise((resolve, reject) => {
+                let i = 0;
+                options.n = months.length;
+                const q = new Queue(months, m => {
+                    options.i = ++i;
+                    this.parent.works([
+                        [x => this.parent.toolbar.navigateMenuByTitle(this._m ? this._m : 'BLN', m, {deep: true, wait: true})],
+                        [x => Promise.resolve(this._m = m)],
+                        [x => this.fetchRun(options, items)],
+                    ])
+                    .then(() => q.next())
+                    .catch(err => reject(err));
+                });
+                q.once('done', () => resolve(items));
+            })]);
+        } else {
+            Object.assign(options, {n: 1, i: 1});
+            works.push([w => this.fetchRun(options, items)]);
+        }
+        return this.parent.works(works);
+    }
+
+    /**
+     * A list of works for fetch.
+     *
+     * @param {object} options Parameters
+     * @returns {Array}
+     */
+    fetchWorks(options) {
+        return [];
+    }
+
+    /**
+     * A run for fetch.
+     *
+     * @param {object} options Parameters
+     * @param {Array} items Collected result
+     * @returns {Promise}
+     */
+    fetchRun(options, items) {
+        Object.assign(options, {
+            work: el => this.fetchRunWorks(el, items, options),
+            done: () => Promise.resolve(items),
+        });
+        return this.paginator.each(options);
+    }
+
+    /**
+     * A list of works for each fetch run.
+     *
+     * @param {WebElement} el Row element
+     * @param {Array} items Collected result
+     * @param {object} options Parameters
+     * @returns {Array}
+     */
+    fetchRunWorks(el, items, options) {
+        const works = [];
+        const dates = this.getDates(options);
+        Object.keys(dates).forEach(key => {
+            if (dates[key].from) {
+                works.push([w => new Promise((resolve, reject) => {
+                    this.fetchRunMatch(el, key, dates[key].from, dates[key].to)
+                        .then(result => {
+                            switch (result) {
+                                case this.DATE_MATCH:
+                                    return resolve(true);
+                                case this.DATE_BEFORE:
+                                    return resolve(false);
+                                default:
+                                    reject(new SippolStopError());
+                            }
+                        })
+                        .catch(err => reject(err))
+                    ;
+                })]);
+            }
+        });
+        if (!works.length) {
+            works.push([w => Promise.resolve(true)]);
+        }
+        return works;
+    }
+
+    /**
+     * Perform check for each row for date range match.
+     *
+     * @param {WebElement} el Row element
+     * @param {string} key Row key
+     * @param {Date} from Start date
+     * @param {Date} to End date 
+     * @returns {Promise}
+     */
+    fetchRunMatch(el, key, from, to) {
+        return this.parent.works([
+            [w => el.findElement(this.fetchRunMatchSelector(key))],
+            [w => w.getRes(0).isDisplayed()],
+            [w => Promise.resolve(this.DATE_BEFORE), w => !w.getRes(1)],
+            [w => w.getRes(0).getText(), w => w.getRes(1)],
+            [w => new Promise((resolve, reject) => {
+                const dt = this.fetchRunMatchDate(w.res);
+                let result;
+                if (!to) {
+                    result = dt >= from ? this.DATE_MATCH : this.DATE_AFTER;
+                } else {
+                    if (from <= dt && dt <= to) {
+                        result = this.DATE_MATCH;
+                    } else if (dt < from) {
+                        result = this.DATE_BEFORE;
+                    } else {
+                        result = this.DATE_AFTER;
+                    }
+                }
+                resolve(result);
+            }), w => w.res],
+        ], {alwaysResolved: true});
+    }
+
+    /**
+     * Row value selector for date range check.
+     *
+     * @param {string} key Row key
+     * @returns {By}
+     */
+    fetchRunMatchSelector(key) {
+        throw new Error('Selector not implemented!');
+    }
+
+    /**
+     * Convert date for date range check.
+     *
+     * @param {string} value Date text
+     * @returns {Date}
+     */
+    fetchRunMatchDate(value) {
+        return this.parent.pickDate(value, true);
+    }
+
+    /**
+     * Do reset.
+     */
+    reset() {
+        delete this._m;
     }
 }
 
@@ -1132,4 +1192,4 @@ class SippolAnnouncedError extends Error {
     }
 }
 
-module.exports = { Sippol, SippolPaginator, SippolStopError, SippolAnnouncedError };
+module.exports = { Sippol, SippolPaginator, SippolDataFetcher, SippolStopError, SippolAnnouncedError };
