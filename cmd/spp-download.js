@@ -39,6 +39,7 @@ class SippolCmdSppDownload extends SippolCmd {
                 type: SippolQueue.QUEUE_DOWNLOAD,
                 data: options,
                 info: SippolUtil.getDateInfo(options, this.dates),
+                download: data.ondownload,
                 callback: socket?.callback,
             });
         }

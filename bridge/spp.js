@@ -148,17 +148,21 @@ class SippolSppBridge extends SippolBridge {
     }
 
     processItemsWithLimit(items, callback, limit) {
-        const maxItems = limit || 100;
-        let count = items.length;
-        const n = maxItems > 0 ? Math.ceil(count / maxItems) : 1;
-        let pos = 0;
-        const q = new Queue(Array.from({length: n}), i => {
-            let num = Math.min(maxItems > 0 ? maxItems : count, count);
-            let part = items.slice(pos, pos + num);
-            pos += num;
-            count -= num;
-            callback(part, () => q.next());
-        });
+        if (limit === 0) {
+            callback(items, () => {});
+        } else {
+            const maxItems = limit || 100;
+            let count = items.length;
+            const n = maxItems > 0 ? Math.ceil(count / maxItems) : 1;
+            let pos = 0;
+            const q = new Queue(Array.from({length: n}), i => {
+                let num = Math.min(maxItems > 0 ? maxItems : count, count);
+                let part = items.slice(pos, pos + num);
+                pos += num;
+                count -= num;
+                callback(part, () => q.next());
+            });
+        }
     }
 
     query(queue) {
@@ -279,7 +283,9 @@ class SippolSppBridge extends SippolBridge {
             }, queue.data))],
             [w => new Promise((resolve, reject) => {
                 const items = w.getRes(1);
-                if (items.length && queue.callback) {
+                const isDownload = typeof queue.download === 'function';
+                if (items.length && (queue.callback || isDownload)) {
+                    const count = isDownload ? 0 : this.maxDownloadItems || 250;
                     const sid = SippolUtil.genId();
                     this.processItemsWithLimit(items, (part, next) => {
                         const zip = new JSZip();
@@ -305,16 +311,20 @@ class SippolSppBridge extends SippolBridge {
                                         level: 9
                                     },
                                 }).then(stream => {
-                                    this.createCallback({sid: sid, download: stream}, queue.callback, queue => {
-                                        queue.resolve = () => next();
-                                        queue.reject = () => next();
-                                    });
+                                    if (isDownload) {
+                                        queue.download(stream, sid);
+                                    } else {
+                                        this.createCallback({sid: sid, download: stream}, queue.callback, queue => {
+                                            queue.resolve = () => next();
+                                            queue.reject = () => next();
+                                        });
+                                    }
                                 }).catch(err => reject(err));
                             } else {
                                 next();
                             }
                         });
-                    }, this.maxDownloadItems || 250);
+                    }, count);
                 }
                 resolve(items);
             }), w => w.getRes(1)],

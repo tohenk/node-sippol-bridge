@@ -157,6 +157,9 @@ class App {
                     break;
                 case SippolQueue.QUEUE_DOWNLOAD:
                     queue = SippolQueue.createDownloadQueue(data.data, data.callback);
+                    if (typeof data.download === 'function') {
+                        queue.download = data.download;
+                    }
                     break;
             }
             if (queue) {
@@ -392,18 +395,37 @@ class App {
             if (this.initialize()) {
                 this.createDequeuer();
                 this.createBridges();
+                this.registerCommands();
                 let serve = true;
                 if (Cmd.args.length) {
                     switch (Cmd.get('mode')) {
                         case this.BRIDGE_SPP:
                             if (Cmd.args[0] === 'download') {
+                                if (this.config.roles) {
+                                    const roles = Object.keys(this.config.roles.roles);
+                                    const dt = new Date();
+                                    const data = {
+                                        year: dt.getFullYear(),
+                                        keg: roles[0],
+                                        sp2d: `${dt.getFullYear()}-01-01~${dt.getFullYear()}-${dt.getMonth().toString().padStart(2, '0')}-${dt.getDate().toString().padStart(2, '0')}`,
+                                        ondownload: (stream, name) => {
+                                            const zipname = path.join(this.config.workdir, name + '.zip');
+                                            fs.writeFileSync(zipname, stream);
+                                            console.log(`Saved to ${zipname}...`);
+                                            process.exit();
+                                        }
+                                    };
+                                    SippolCmd.get('spp:download').consume({data});
+                                } else {
+                                    console.error('Download skipped, no roles available!');
+                                    process.exit();
+                                }
                                 serve = false;
                             }
                             break;
                     }
                 }
                 this.createServer(serve);
-                this.registerCommands();
                 return true;
             }
         } else {
