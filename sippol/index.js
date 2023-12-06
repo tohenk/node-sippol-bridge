@@ -29,6 +29,22 @@ const util = require('util');
 const debug = require('debug')('sippol');
 
 /**
+ * Get row identifier.
+ *
+ * @callback rowIdCallback
+ * @param {WebElement} el Row element
+ * @returns {Promise<string|number>}
+ */
+
+/**
+ * Get row works list.
+ *
+ * @callback rowWorksCallback
+ * @param {WebElement} el Row element
+ * @returns {Promise[]}
+ */
+
+/**
  * Handles common functionality to do interaction with Sippol such as login, logout,
  * and common boilerplate to access specific app.
  *
@@ -418,7 +434,7 @@ class Sippol extends WebRobot {
      * @returns {Promise<string|number>}
      */
     getRowId(el) {
-        return Promise.reject('Not implemented!');
+        throw new Error('Not implemented!');
     }
 
     /**
@@ -910,6 +926,9 @@ class SippolPaginator {
      * Iterate each data in pagination.
      *
      * @param {object} options Iterate data
+     * @param {rowWorksCallback} options.work A callback to get works list
+     * @param {rowIdCallback|undefined} options.rowId A callback to get row identifier
+     * @param {number|undefined} options.direction Set to 1 for a forward direction or -1 for backward
      * @param {string|undefined} options.root Root selector which usually include table
      * @param {string|undefined} options.rowSelector Row selector relative to root
      * @param {string|undefined} options.pagerSelector Pagination selector relative to root
@@ -922,7 +941,7 @@ class SippolPaginator {
         Object.assign(options, {
             selector: By.xpath(root + rowSelector),
             pager: By.xpath(root + pagerSelector),
-            info: el => this.parent.getRowId(el),
+            info: el => typeof options.rowId === 'function' ? options.rowId(el) : this.parent.getRowId(el),
             works: el => options.work(el),
         });
         return this.iterate(options);
