@@ -430,4 +430,4 @@ class SippolQueue
     static get STATUS_TIMED_OUT() { return 'timeout' }
 }
 
-module.exports = SippolQueue;
+module.exports = { SippolQueue, SippolDequeue };

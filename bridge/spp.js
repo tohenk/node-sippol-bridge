@@ -25,24 +25,18 @@
 const fs = require('fs');
 const path = require('path');
 const Queue = require('@ntlab/work/queue');
-const { SippolAnnouncedError } = require('./sippol');
-const { SippolSpp } = require('./sippol/spp');
-const SippolQueue = require('./queue');
-const SippolUtil = require('./util');
+const SippolBridge = require('.');
+const { SippolAnnouncedError } = require('../sippol');
+const { SippolSpp } = require('../sippol/spp');
+const { SippolQueue } = require('../queue');
+const SippolUtil = require('../util');
 const JSZip = require('jszip');
 
-class SippolBridge {
+class SippolSppBridge extends SippolBridge {
 
-    STATE_NONE = 1
-    STATE_SELF_TEST = 2
-    STATE_OPERATIONAL = 3
-
-    constructor(options) {
+    initialize(options) {
         this.sippol = new SippolSpp(this.getOptions(options));
-        this.state = this.STATE_NONE;
         this.works = this.sippol.works;
-        this.roles = options.roles.roles || {};
-        this.users = options.roles.users || {};
     }
 
     getOptions(options) {
@@ -82,48 +76,8 @@ class SippolBridge {
         return result;
     }
 
-    selfTest() {
-        if (this.state < this.STATE_SELF_TEST) {
-            this.state = this.STATE_SELF_TEST;
-        }
-        const f = () => {
-            this.state = this.STATE_OPERATIONAL;
-            return this.state;
-        }
-        return this.do([
-            [w => this.waitUntilReady()],
-            [w => Promise.resolve(f())],
-        ]);
-    }
-
-    isOperational() {
-        return this.state == this.STATE_OPERATIONAL;
-    }
-
-    isReady() {
-        return this.sippol.ready;
-    }
-
-    waitUntilReady() {
-        return new Promise((resolve, reject) => {
-            const f = () => {
-                if (this.isReady()) {
-                    resolve();
-                } else {
-                    setTimeout(f, 100);
-                }
-            }
-            f();
-        });
-    }
-
-    sleep(ms) {
-        return this.sippol.sleep(ms);
-    }
-
-    do(theworks, options) {
-        options = options || {};
-        const works = [
+    defaultWorks(options) {
+        return [
             [w => this.sippol.open()],
             [w => this.sippol.waitLoader()],
             [w => this.doAs(options.role), w => options.role],
@@ -132,32 +86,6 @@ class SippolBridge {
             [w => this.sippol.showData(options.status), w => options.role],
             [w => this.sippol.sleep(this.sippol.opdelay), w => options.role],
         ];
-        if (Array.isArray(theworks)) {
-            works.push(...theworks);
-        }
-        if (typeof theworks == 'function') {
-            works.push(theworks);
-        }
-        return this.works(works, {
-            done: err => {
-                return this.works([
-                    [w => this.sippol.stop()],
-                    [w => new Promise((resolve, reject) => setTimeout(() => resolve(), this.sippol.opdelay))],
-                ]);
-            }
-        });
-    }
-
-    doAs(role) {
-        const user = this.roles[role];
-        if (!user) {
-            return Promise.reject(`Role not found: ${role}!`);
-        }
-        const cred = this.users[user];
-        if (!cred) {
-            return Promise.reject(`User not found: ${user}!`);
-        }
-        return this.sippol.login(cred.username, cred.password);
     }
 
     getRoleFromKeg(options) {
@@ -184,8 +112,12 @@ class SippolBridge {
 
     list(options) {
         options = options || {};
-        if (options.clear) this.items = {};
-        if (this.spptype) options.spptype = this.spptype;
+        if (options.clear) {
+            this.items = {};
+        }
+        if (this.spptype) {
+            options.spptype = this.spptype;
+        }
         this.getRoleFromKeg(options);
         return this.do(w => this.sippol.fetch(options), options);
     }
@@ -513,4 +445,4 @@ class SippolBridge {
     }
 }
 
-module.exports = SippolBridge;
+module.exports = SippolSppBridge;

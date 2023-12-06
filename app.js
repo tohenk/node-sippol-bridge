@@ -26,6 +26,7 @@ const path = require('path');
 const Cmd = require('@ntlab/ntlib/cmd');
 
 Cmd.addBool('help', 'h', 'Show program usage').setAccessible(false);
+Cmd.addVar('mode', 'm', 'Set bridge mode, spp or bl', 'bridge-mode');
 Cmd.addVar('config', 'c', 'Set configuration file', 'filename');
 Cmd.addVar('port', 'p', 'Set server port to listen', 'port');
 Cmd.addVar('url', '', 'Set SIPPOL url', 'url');
@@ -40,18 +41,20 @@ if (!Cmd.parse() || (Cmd.get('help') && usage())) {
 const fs = require('fs');
 const util = require('util');
 const Work = require('@ntlab/work/work');
-const SippolBridge = require('./bridge');
-const SippolQueue = require('./queue');
+const SippolSppBridge = require('./bridge/spp');
+const { SippolQueue } = require('./queue');
 const SippolNotifier = require('./notifier');
+const SippolCmd = require('./cmd');
 
 class App {
 
-    VERSION = 'SIPPOL-BRIDGE-2.0'
+    VERSION = 'SIPPOL-BRIDGE-3.0'
+
+    BRIDGE_SPP = 'spp'
 
     config = {}
     bridges = []
     sockets = []
-    uploads = {}
     sessions = {}
 
     initialize() {
@@ -68,21 +71,14 @@ class App {
                 this.config = config;
             }
         }
-        if (Cmd.get('url')) this.config.url = Cmd.get('url');
-        if (!this.config.workdir) this.config.workdir = __dirname;
-        if (!this.config.downloaddir) this.config.downloaddir = path.join(this.config.workdir, 'download');
-
-        // load form maps
-        filename = path.join(__dirname, 'maps.json');
-        if (fs.existsSync(filename)) {
-            this.config.maps = JSON.parse(fs.readFileSync(filename));
-            console.log('Maps loaded from %s', filename);
+        if (Cmd.get('url')) {
+            this.config.url = Cmd.get('url');
         }
-        // load doc maps
-        filename = path.join(__dirname, 'docs.json');
-        if (fs.existsSync(filename)) {
-            this.config.docs = JSON.parse(fs.readFileSync(filename));
-            console.log('Document maps loaded from %s', filename);
+        if (!this.config.workdir) {
+            this.config.workdir = __dirname;
+        }
+        if (!this.config.downloaddir) {
+            this.config.downloaddir = path.join(this.config.workdir, 'download');
         }
         // load roles
         filename = path.join(__dirname, 'roles.json');
@@ -90,26 +86,51 @@ class App {
             this.config.roles = JSON.parse(fs.readFileSync(filename));
             console.log('Roles loaded from %s', filename);
         }
+        // load bridge specific configuration
+        switch (Cmd.get('mode')) {
+            case this.BRIDGE_SPP:
+                // load form maps
+                filename = path.join(__dirname, 'maps.json');
+                if (fs.existsSync(filename)) {
+                    this.config.maps = JSON.parse(fs.readFileSync(filename));
+                    console.log('Maps loaded from %s', filename);
+                }
+                // load doc maps
+                filename = path.join(__dirname, 'docs.json');
+                if (fs.existsSync(filename)) {
+                    this.config.docs = JSON.parse(fs.readFileSync(filename));
+                    console.log('Document maps loaded from %s', filename);
+                }
+                // add default bridges
+                if (!this.configs) {
+                    this.configs = {yr: {year: new Date().getFullYear()}};
+                }
+                break;
+        }
         // load profile
         this.config.profiles = {};
         filename = path.join(__dirname, 'profiles.json');
         if (fs.existsSync(filename)) {
             const profiles = JSON.parse(fs.readFileSync(filename));
-            if (profiles.profiles) this.config.profiles = profiles.profiles;
-            if (profiles.active) profile = profiles.active;
+            if (profiles.profiles) {
+                this.config.profiles = profiles.profiles;
+            }
+            if (profiles.active) {
+                profile = profiles.active;
+            }
         }
-        if (Cmd.get('profile')) profile = Cmd.get('profile');
+        if (Cmd.get('profile')) {
+            profile = Cmd.get('profile');
+        }
         if (profile && this.config.profiles[profile]) {
             console.log('Using profile %s', profile);
             const keys = ['timeout', 'wait', 'delay', 'opdelay'];
-            for (let key in this.config.profiles[profile]) {
-                if (keys.indexOf(key) < 0) continue;
+            for (const key in this.config.profiles[profile]) {
+                if (keys.indexOf(key) < 0) {
+                    continue;
+                }
                 this.config[key] = this.config.profiles[profile][key];
             }
-        }
-        // add default bridges
-        if (!this.configs) {
-            this.configs = {yr: {year: new Date().getFullYear()}};
         }
         return true;
     }
@@ -190,7 +211,7 @@ class App {
                 this.sessions[browser]++;
                 if (this.sessions[browser] > 1) config.session = 's' + this.sessions[browser];
             }
-            const bridge = new SippolBridge(config);
+            const bridge = new SippolSppBridge(config);
             bridge.name = name;
             bridge.year = config.year;
             this.bridges.push(bridge);
@@ -198,23 +219,25 @@ class App {
         });
     }
 
-    createServer() {
+    createServer(serve = true) {
         const { createServer } = require('http');
         const { Server } = require('socket.io');
         const http = createServer();
         const port = Cmd.get('port') || 3000;
-        const opts = {};
-        if (this.config.cors) {
-            opts.cors = this.config.cors;
-        } else {
-            opts.cors = {origin: '*'};
+        if (serve) {
+            const opts = {};
+            if (this.config.cors) {
+                opts.cors = this.config.cors;
+            } else {
+                opts.cors = {origin: '*'};
+            }
+            const io = new Server(http, opts);
+            io.of('/sippol')
+                .on('connection', socket => {
+                    this.handleConnection(socket);
+                })
+            ;
         }
-        const io = new Server(http, opts);
-        io.of('/sippol')
-            .on('connection', socket => {
-                this.handleConnection(socket);
-            })
-        ;
         http.listen(port, () => {
             console.log('Application ready on port %s...', port);
             const selfTests = [];
@@ -241,6 +264,10 @@ class App {
         });
     }
 
+    registerCommands() {
+        SippolCmd.register(this, Cmd.get('mode'));
+    }
+
     checkReadiness() {
         const readinessTimeout = this.config.readinessTimeout || 30000; // 30 seconds
         this.startTime = Date.now();
@@ -261,228 +288,7 @@ class App {
 
     handleConnection(socket) {
         console.log('Client connected: %s', socket.id);
-        const unhandled = (event, msg) => {
-            console.log(msg);
-            socket.emit(event, {error: msg});
-        }
-        socket
-            .on('disconnect', () => {
-                console.log('Client disconnected: %s', socket.id);
-                const idx = this.sockets.indexOf(socket);
-                if (idx >= 0) {
-                    this.sockets.splice(idx);
-                }
-            })
-            .on('notify', () => {
-                if (this.sockets.indexOf(socket) < 0) {
-                    this.sockets.push(socket);
-                    console.log('Client notification enabled: %s', socket.id);
-                }
-            })
-            .on('status', () => {
-                socket.emit('status', this.dequeue.getStatus());
-            })
-            .on('setup', data => {
-                if (data.callback) {
-                    socket.callback = data.callback;
-                }
-                socket.emit('setup', {version: this.VERSION});
-            })
-            .on('logs', data => {
-                if (data.id) {
-                    socket.emit('logs', {ref: data.id, logs: this.dequeue.getLogs()});
-                }
-            })
-            .on('spp', data => {
-                const res = this.dequeue.createQueue({
-                    type: SippolQueue.QUEUE_SPP,
-                    data: data,
-                    callback: socket.callback,
-                });
-                socket.emit('spp', res);
-            })
-            .on('upload', data => {
-                if (data.Id && data.keg) {
-                    const res = this.dequeue.createQueue({
-                        type: SippolQueue.QUEUE_UPLOAD,
-                        data: data,
-                        callback: socket.callback,
-                    });
-                    socket.emit('upload', res);
-                } else {
-                    unhandled('upload', 'Ignoring upload without Id or keg');
-                }
-            })
-            .on('upload-part', data => {
-                if (data.Id && data.keg) {
-                    let res;
-                    if (this.uploads[data.Id] == undefined) {
-                        this.uploads[data.Id] = {Id: data.Id, keg: data.keg};
-                        if (data.year) this.uploads[data.Id].year = data.year;
-                        if (data.info) this.uploads[data.Id].info = data.info;
-                        if (data.term) this.uploads[data.Id].term = data.term;
-                    }
-                    const parts = [];
-                    let partComplete = false;
-                    let key;
-                    Object.keys(data).forEach(k => {
-                        if (['Id', 'info', 'keg', 'term', 'year', 'seq', 'tot', 'size', 'len'].indexOf(k) < 0) {
-                            let buff = Buffer.from(data[k]);
-                            if (this.uploads[data.Id][k] != undefined) {
-                                buff = Buffer.concat([this.uploads[data.Id][k], buff]);
-                            }
-                            this.uploads[data.Id][k] = buff;
-                            key = k;
-                        }
-                    });
-                    if (this.uploads[data.Id][key] != undefined) {
-                        if (this.uploads[data.Id][key].length == data.size) {
-                            partComplete = true;
-                            parts.push(key);
-                        }
-                    }
-                    if (parts.length) {
-                        if (data.seq == data.tot && partComplete) {
-                            res = this.dequeue.createQueue({
-                                type: SippolQueue.QUEUE_UPLOAD,
-                                data: this.uploads[data.Id],
-                                callback: socket.callback,
-                            });
-                            delete this.uploads[data.Id];
-                        } else {
-                            res = {part: parts};
-                        }
-                    } else if (!partComplete && key) {
-                        res = {part: [key], len: this.uploads[data.Id][key].length};
-                    } else {
-                        res = {error: 'Document part not found for ' + data.Id};
-                    }
-                    socket.emit('upload-part', res);
-                } else {
-                    unhandled('upload-part', 'Ignoring partial upload without Id or keg');
-                }
-            })
-            .on('query', data => {
-                if (data.year && data.keg && data.term) {
-                    if (data.notify) {
-                        const res = this.dequeue.createQueue({
-                            type: SippolQueue.QUEUE_QUERY,
-                            data: {year: data.year, keg: data.keg, term: data.term, notify: true},
-                            info: data.term,
-                            callback: socket.callback,
-                        });
-                        socket.emit('query', res);
-                    } else {
-                        const f = () => new Promise((resolve, reject) => {
-                            const res = this.dequeue.createQueue({
-                                type: SippolQueue.QUEUE_QUERY,
-                                data: {year: data.year, keg: data.keg, term: data.term},
-                                info: data.term,
-                                resolve: resolve,
-                                reject: reject,
-                                callback: socket.callback,
-                            });
-                        });
-                        f()
-                            .then(items => {
-                                socket.emit('query', {result: items});
-                            })
-                            .catch(err => {
-                                socket.emit('query', {error: err instanceof Error ? err.message : err});
-                            })
-                        ;
-                    }
-                } else {
-                    unhandled('query', 'Ignoring query without year, keg, or term');
-                }
-            })
-            .on('list', data => {
-                if (data.year && data.keg) {
-                    const options = {year: data.year, keg: data.keg, timeout: 0};
-                    this.getDateForOptions(options, data);
-                    const res = this.dequeue.createQueue({
-                        type: SippolQueue.QUEUE_LIST,
-                        data: options,
-                        info: this.getDateInfo(options),
-                        callback: socket.callback,
-                    });
-                    socket.emit('list', res);
-                } else {
-                    unhandled('list', 'Ignoring list without year or keg');
-                }
-            })
-            .on('download', data => {
-                if (data.year && data.keg) {
-                    const options = {year: data.year, keg: data.keg, timeout: 0};
-                    this.getDateForOptions(options, data);
-                    const res = this.dequeue.createQueue({
-                        type: SippolQueue.QUEUE_DOWNLOAD,
-                        data: options,
-                        info: this.getDateInfo(options),
-                        callback: socket.callback,
-                    });
-                    socket.emit('download', res);
-                } else {
-                    unhandled('download', 'Ignoring list without year or keg');
-                }
-            })
-        ;
-    }
-
-    getDateForOptions(options, data) {
-        ['spp', 'spm', 'sp2d'].forEach(key => {
-            const value = data[key];
-            if (value) {
-                let values;
-                if (!isNaN(value)) {
-                    values = new Date(value);
-                }
-                if (typeof value == 'string') {
-                    const dates = value.split('~');
-                    dates.forEach(dt => {
-                        try {
-                            const d = new Date(dt);
-                            if (!values) {
-                                values = {};
-                            }
-                            if (!values.from) {
-                                values.from = d;
-                            } else {
-                                values.to = d;
-                            }
-                        }
-                        catch (err) {
-                            console.error('Unable to parse date: %s!', err);
-                        }
-                    });
-                }
-                if (values) {
-                    options[key] = values;
-                }
-            }
-        });
-    }
-
-    getDateInfo(options) {
-        let res;
-        ['spp', 'spm', 'sp2d'].forEach(key => {
-            let value = options[key];
-            if (value) {
-                const values = [];
-                if (value instanceof Date) {
-                    values.push(value.toISOString());
-                }
-                if (value.from instanceof Date) {
-                    values.push(value.from.toISOString());
-                }
-                if (value.to instanceof Date) {
-                    values.push(value.to.toISOString());
-                }
-                res = `${key.toUpperCase()}: ${values.join(' - ')}`;
-                return true;
-            }
-        });
-        return res;
+        SippolCmd.handle(socket);
     }
 
     handleNotify() {
@@ -582,11 +388,26 @@ class App {
     }
 
     run() {
-        if (this.initialize()) {
-            this.createDequeuer();
-            this.createBridges();
-            this.createServer();
-            return true;
+        if (Cmd.get('mode')) {
+            if (this.initialize()) {
+                this.createDequeuer();
+                this.createBridges();
+                let serve = true;
+                if (Cmd.args.length) {
+                    switch (Cmd.get('mode')) {
+                        case this.BRIDGE_SPP:
+                            if (Cmd.args[0] === 'download') {
+                                serve = false;
+                            }
+                            break;
+                    }
+                }
+                this.createServer(serve);
+                this.registerCommands();
+                return true;
+            }
+        } else {
+            usage();
         }
     }
 }
