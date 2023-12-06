@@ -336,6 +336,7 @@ class Sippol extends WebRobot {
             [w => Promise.resolve(w.getRes(0).substr(0, w.getRes(0).indexOf('#')))],
             [w => Promise.resolve(w.getRes(0).substr(w.getRes(0).indexOf('#')))],
             [w => this.open(w.getRes(1) + this.app), w => w.getRes(2) !== this.app],
+            [w => this.waitLoader(), w => w.getRes(2) !== this.app],
         ]);
     }
 
