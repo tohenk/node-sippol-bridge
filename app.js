@@ -214,11 +214,18 @@ class App {
                 this.sessions[browser]++;
                 if (this.sessions[browser] > 1) config.session = 's' + this.sessions[browser];
             }
-            const bridge = new SippolSppBridge(config);
-            bridge.name = name;
-            bridge.year = config.year;
-            this.bridges.push(bridge);
-            console.log('Sippol bridge created: %s (%s)', name, bridge.accepts ? bridge.accepts.join(', ') : '*');
+            let bridge;
+            switch (Cmd.get('mode')) {
+                case this.BRIDGE_SPP:
+                    bridge = new SippolSppBridge(config);
+                    break;
+            }
+            if (bridge) {
+                bridge.name = name;
+                bridge.year = config.year;
+                this.bridges.push(bridge);
+                console.log('Sippol bridge created: %s (%s)', name, bridge.accepts ? bridge.accepts.join(', ') : '*');
+            }
         });
     }
 
@@ -268,7 +275,8 @@ class App {
     }
 
     registerCommands() {
-        SippolCmd.register(this, Cmd.get('mode'));
+        const prefixes = {[this.BRIDGE_SPP]: 'spp'};
+        SippolCmd.register(this, prefixes[Cmd.get('mode')]);
     }
 
     checkReadiness() {
@@ -375,19 +383,29 @@ class App {
             } else {
                 switch (queue.type) {
                     case SippolQueue.QUEUE_SPP:
-                        return bridge.createSpp(queue);
+                        return bridge.create(queue);
                     case SippolQueue.QUEUE_UPLOAD:
-                        return bridge.uploadDocs(queue);
+                        return bridge.upload(queue);
                     case SippolQueue.QUEUE_QUERY:
                         return bridge.query(queue);
                     case SippolQueue.QUEUE_LIST:
-                        return bridge.listSpp(queue);
+                        return bridge.list(queue);
                     case SippolQueue.QUEUE_DOWNLOAD:
-                        return bridge.downloadSpp(queue);
+                        return bridge.download(queue);
                 }
             }
         }
         return Promise.reject(util.format('No bridge can handle %s!', queue.getInfo()));
+    }
+
+    createDownloadData(dateKey) {
+        const roles = Object.keys(this.config.roles.roles);
+        const dt = new Date();
+        return {
+            year: dt.getFullYear(),
+            keg: roles[0],
+            [dateKey]: `${dt.getFullYear()}-01-01~${dt.getFullYear()}-${dt.getMonth().toString().padStart(2, '0')}-${dt.getDate().toString().padStart(2, '0')}`,
+        };
     }
 
     run() {
@@ -402,19 +420,14 @@ class App {
                         case this.BRIDGE_SPP:
                             if (Cmd.args[0] === 'download') {
                                 if (this.config.roles) {
-                                    const roles = Object.keys(this.config.roles.roles);
-                                    const dt = new Date();
-                                    const data = {
-                                        year: dt.getFullYear(),
-                                        keg: roles[0],
-                                        sp2d: `${dt.getFullYear()}-01-01~${dt.getFullYear()}-${dt.getMonth().toString().padStart(2, '0')}-${dt.getDate().toString().padStart(2, '0')}`,
+                                    const data = Object.assign(this.createDownloadData('sp2d'), {
                                         ondownload: (stream, name) => {
                                             const zipname = path.join(this.config.workdir, name + '.zip');
                                             fs.writeFileSync(zipname, stream);
                                             console.log(`Saved to ${zipname}...`);
                                             process.exit();
                                         }
-                                    };
+                                    });
                                     SippolCmd.get('spp:download').consume({data});
                                 } else {
                                     console.error('Download skipped, no roles available!');

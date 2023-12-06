@@ -35,45 +35,9 @@ const JSZip = require('jszip');
 class SippolSppBridge extends SippolBridge {
 
     initialize(options) {
+        this.optionKeys = ['datakey', 'spptype', 'accepts', 'docs', 'maxNotifiedItems', 'maxDownloadItems'];
         this.sippol = new SippolSpp(this.getOptions(options));
         this.works = this.sippol.works;
-    }
-
-    getOptions(options) {
-        const opts = ['datakey', 'spptype', 'accepts', 'docs', 'maxNotifiedItems', 'maxDownloadItems'];
-        opts.forEach(opt => {
-            if (options[opt]) {
-                this[opt] = options[opt];
-                delete options[opt];
-            }
-        });
-        return options;
-    }
-
-    filterItems(items, filter) {
-        const result = [];
-        if (items) {
-            filter = filter || {};
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].Status == this.sippol.SPP_BATAL) {
-                    continue;
-                }
-                if (filter.status && items[i].Status != filter.status) {
-                    continue;
-                }
-                if (filter.nominal && items[i].Nominal != filter.nominal) {
-                    continue;
-                }
-                if (filter.untuk && items[i].Untuk != filter.untuk) {
-                    continue;
-                }
-                if (filter.year && (!items[i].SPPTanggal || items[i].SPPTanggal.indexOf(filter.year) != 0)) {
-                    continue;
-                }
-                result.push(items[i]);
-            }
-        }
-        return result;
     }
 
     defaultWorks(options) {
@@ -110,24 +74,30 @@ class SippolSppBridge extends SippolBridge {
         return res;
     }
 
-    list(options) {
-        options = options || {};
-        if (options.clear) {
-            this.items = {};
+    filterItems(items, filter) {
+        const result = [];
+        if (items) {
+            filter = filter || {};
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].Status == this.sippol.SPP_BATAL) {
+                    continue;
+                }
+                if (filter.status && items[i].Status != filter.status) {
+                    continue;
+                }
+                if (filter.nominal && items[i].Nominal != filter.nominal) {
+                    continue;
+                }
+                if (filter.untuk && items[i].Untuk != filter.untuk) {
+                    continue;
+                }
+                if (filter.year && (!items[i].SPPTanggal || items[i].SPPTanggal.indexOf(filter.year) != 0)) {
+                    continue;
+                }
+                result.push(items[i]);
+            }
         }
-        if (this.spptype) {
-            options.spptype = this.spptype;
-        }
-        this.getRoleFromKeg(options);
-        return this.do(w => this.sippol.fetch(options), options);
-    }
-
-    getPenerima(penerima) {
-        return this.works([
-            [w => this.sippol.filter(penerima, this.sippol.DATA_PENERIMA)],
-            [w => this.sippol.sleep(this.sippol.opdelay)],
-            [w => this.sippol.fetch()],
-        ]);
+        return result;
     }
 
     createCallback(data, callback, init) {
@@ -165,6 +135,26 @@ class SippolSppBridge extends SippolBridge {
         }
     }
 
+    getPenerima(penerima) {
+        return this.works([
+            [w => this.sippol.filter(penerima, this.sippol.DATA_PENERIMA)],
+            [w => this.sippol.sleep(this.sippol.opdelay)],
+            [w => this.sippol.fetch()],
+        ]);
+    }
+
+    doList(options) {
+        options = options || {};
+        if (options.clear) {
+            this.items = {};
+        }
+        if (this.spptype) {
+            options.spptype = this.spptype;
+        }
+        this.getRoleFromKeg(options);
+        return this.do(w => this.sippol.fetch(options), options);
+    }
+
     query(queue) {
         return this.do(w => new Promise((resolve, reject) => {
             this.getPenerima(queue.data.term)
@@ -180,7 +170,7 @@ class SippolSppBridge extends SippolBridge {
         }), this.getRoleFromQueue(queue));
     }
 
-    createSpp(queue) {
+    create(queue) {
         let id, matches;
         const penerima = queue.getMappedData('penerima.penerima');
         const jumlah = queue.getMappedData('rincian.jumlah');
@@ -248,9 +238,9 @@ class SippolSppBridge extends SippolBridge {
         ], this.getRoleFromQueue(queue));
     }
 
-    listSpp(queue) {
+    list(queue) {
         return this.works([
-            [w => this.list(Object.assign({continueOnError: true}, queue.data))],
+            [w => this.doList(Object.assign({continueOnError: true}, queue.data))],
             [w => new Promise((resolve, reject) => {
                 const items = w.getRes(0);
                 const matches = this.filterItems(items, {year: queue.data.year});
@@ -262,7 +252,7 @@ class SippolSppBridge extends SippolBridge {
         ]);
     }
 
-    downloadSpp(queue) {
+    download(queue) {
         const downloaddir = this.sippol.options.downloaddir;
         return this.works([
             [w => new Promise((resolve, reject) => {
@@ -276,7 +266,7 @@ class SippolSppBridge extends SippolBridge {
                     resolve();
                 });
             })],
-            [w => this.list(Object.assign({
+            [w => this.doList(Object.assign({
                 mode: this.sippol.FETCH_DOWNLOAD,
                 status: this.sippol.status.SP2D_CAIR,
                 continueOnError: true
@@ -331,7 +321,7 @@ class SippolSppBridge extends SippolBridge {
         ]);
     }
 
-    uploadDocs(queue) {
+    upload(queue) {
         let result;
         const docs = {};
         const merged = {};

@@ -38,6 +38,18 @@ class SippolBridge {
     initialize(options) {
     }
 
+    getOptions(options) {
+        if (Array.isArray(this.optionKeys)) {
+            this.optionKeys.forEach(opt => {
+                if (options[opt]) {
+                    this[opt] = options[opt];
+                    delete options[opt];
+                }
+            });
+        }
+        return options;
+    }
+
     selfTest() {
         if (this.state < this.STATE_SELF_TEST) {
             this.state = this.STATE_SELF_TEST;
