@@ -96,7 +96,7 @@ class SippolUtil {
     static getDateInfo(result, keys) {
         let res;
         if (Array.isArray(keys)) {
-            ['spp', 'spm', 'sp2d'].forEach(key => {
+            keys.forEach(key => {
                 let value = result[key];
                 if (value) {
                     const values = [];
