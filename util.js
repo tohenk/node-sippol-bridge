@@ -23,6 +23,8 @@
  * SOFTWARE.
  */
 
+const Excel = require('exceljs');
+const Queue = require('@ntlab/work/queue');
 const crypto = require('crypto');
 
 /**
@@ -115,6 +117,43 @@ class SippolUtil {
             });
         }
         return res;
+    }
+
+    /**
+     * Export objects to Excel.
+     *
+     * @param {object[]} rows Rows to export
+     * @returns {Promise<Buffer>}
+     */
+    static exportXls(rows) {
+        return new Promise((resolve, reject) => {
+            const wb = new Excel.Workbook();
+            const sheet = wb.addWorksheet('Worksheet');
+            let header, i = 1;
+            const addRow = values => {
+                const r = sheet.getRow(i++);
+                for (let col = 1; col <= values.length; col++) {
+                    r.getCell(col).value = values[col - 1];
+                }
+            }
+            const q = new Queue(rows, row => {
+                if (!header) {
+                    header = Object.keys(row);
+                    addRow(header);
+                }
+                const values = [];
+                header.forEach(k => {
+                    values.push(row[k] === undefined ? null : row[k]);
+                });
+                addRow(values);
+                q.next();
+            });
+            q.once('done', () => {
+                wb.xlsx.writeBuffer()
+                    .then(buffer => resolve(buffer))
+                    .catch(err => reject(err));
+            });
+        });
     }
 }
 

@@ -42,6 +42,7 @@ const fs = require('fs');
 const util = require('util');
 const Work = require('@ntlab/work/work');
 const SippolSppBridge = require('./bridge/spp');
+const SippolTrxblBridge = require('./bridge/trxbl');
 const { SippolQueue } = require('./queue');
 const SippolNotifier = require('./notifier');
 const SippolCmd = require('./cmd');
@@ -51,6 +52,7 @@ class App {
     VERSION = 'SIPPOL-BRIDGE-3.0'
 
     BRIDGE_SPP = 'spp'
+    BRIDGE_TRXBL = 'bl'
 
     config = {}
     bridges = []
@@ -182,7 +184,7 @@ class App {
                 if (queue.type === SippolQueue.QUEUE_SPP && SippolQueue.hasPendingQueue(queue)) {
                     return {message: `SPP ${queue.info} sudah dalam antrian!`};
                 }
-                console.log('%s: %s', queue.type.toUpperCase(), queue.info);
+                console.log('+ %s: %s', queue.type.toUpperCase(), queue.info);
                 return SippolQueue.addQueue(queue);
             }
         }
@@ -218,6 +220,9 @@ class App {
             switch (Cmd.get('mode')) {
                 case this.BRIDGE_SPP:
                     bridge = new SippolSppBridge(config);
+                    break;
+                case this.BRIDGE_TRXBL:
+                    bridge = new SippolTrxblBridge(config);
                     break;
             }
             if (bridge) {
@@ -275,7 +280,7 @@ class App {
     }
 
     registerCommands() {
-        const prefixes = {[this.BRIDGE_SPP]: 'spp'};
+        const prefixes = {[this.BRIDGE_SPP]: 'spp', [this.BRIDGE_TRXBL]: 'trxbl'};
         SippolCmd.register(this, prefixes[Cmd.get('mode')]);
     }
 
@@ -398,13 +403,20 @@ class App {
         return Promise.reject(util.format('No bridge can handle %s!', queue.getInfo()));
     }
 
-    createDownloadData(dateKey) {
+    createDownloadData(dateKey, args) {
         const roles = Object.keys(this.config.roles.roles);
         const dt = new Date();
+        let from, to;
+        if (Array.isArray(args) && args.length) {
+            [from, to] = args[0].split('~');
+        } else {
+            from = `${dt.getFullYear()}-01-01`;
+            to = `${dt.getFullYear()}-${dt.getMonth().toString().padStart(2, '0')}-${dt.getDate().toString().padStart(2, '0')}`;
+        }
         return {
             year: dt.getFullYear(),
             keg: roles[0],
-            [dateKey]: `${dt.getFullYear()}-01-01~${dt.getFullYear()}-${dt.getMonth().toString().padStart(2, '0')}-${dt.getDate().toString().padStart(2, '0')}`,
+            [dateKey]: [from, to].join('~'),
         };
     }
 
@@ -416,11 +428,12 @@ class App {
                 this.registerCommands();
                 let serve = true;
                 if (Cmd.args.length) {
+                    const cmd = Cmd.args.shift();
                     switch (Cmd.get('mode')) {
                         case this.BRIDGE_SPP:
-                            if (Cmd.args[0] === 'download') {
+                            if (cmd === 'download') {
                                 if (this.config.roles) {
-                                    const data = Object.assign(this.createDownloadData('sp2d'), {
+                                    const data = Object.assign(this.createDownloadData('sp2d', Cmd.args), {
                                         ondownload: (stream, name) => {
                                             const zipname = path.join(this.config.workdir, name + '.zip');
                                             fs.writeFileSync(zipname, stream);
@@ -429,6 +442,25 @@ class App {
                                         }
                                     });
                                     SippolCmd.get('spp:download').consume({data});
+                                } else {
+                                    console.error('Download skipped, no roles available!');
+                                    process.exit();
+                                }
+                                serve = false;
+                            }
+                            break;
+                        case this.BRIDGE_TRXBL:
+                            if (cmd === 'download') {
+                                if (this.config.roles) {
+                                    const data = Object.assign(this.createDownloadData('date', Cmd.args), {
+                                        ondownload: (stream, name) => {
+                                            const xlsname = path.join(this.config.workdir, name + '.xlsx');
+                                            fs.writeFileSync(xlsname, stream);
+                                            console.log(`Saved to ${xlsname}...`);
+                                            process.exit();
+                                        }
+                                    });
+                                    SippolCmd.get('trxbl:download').consume({data});
                                 } else {
                                     console.error('Download skipped, no roles available!');
                                     process.exit();
@@ -453,7 +485,13 @@ class App {
 
 function usage() {
     console.log('Usage:');
-    console.log('  node %s [options]', path.basename(process.argv[1]));
+    console.log('  node %s [options] [command] [params]', path.basename(process.argv[1]));
+    console.log('');
+    console.log('Command in spp mode:');
+    console.log('   download   Download SPP then exit after completion');
+    console.log('');
+    console.log('Command in bl mode:');
+    console.log('   download   Download SPJ then exit after completion');
     console.log('');
     console.log('Options:');
     console.log(Cmd.dump());
