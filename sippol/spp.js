@@ -22,6 +22,7 @@
  * SOFTWARE.
  */
 
+const fs = require('fs');
 const { Sippol, SippolPaginator, SippolDataFetcher, SippolAnnouncedError } = require('.');
 const { By, Key, WebElement } = require('selenium-webdriver');
 const Queue = require('@ntlab/work/queue');

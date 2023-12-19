@@ -1,13 +1,13 @@
 {
   "name": "sippol-bridge",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "SIPPOL bridge",
   "main": "app.js",
   "author": "Toha <tohenk@yahoo.com>",
   "license": "MIT",
   "dependencies": {
     "@ntlab/ntlib": "^2.0.5",
-    "@ntlab/webrobot": "^1.4.20",
+    "@ntlab/webrobot": "^1.4.23",
     "@ntlab/work": "^1.1.5",
     "debug": "^4.3.4",
     "easy-pdf-merge": "^0.2.6",

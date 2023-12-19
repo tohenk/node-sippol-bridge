@@ -182,7 +182,7 @@ class App {
                     queue.reject = data.reject;
                 }
                 if (queue.type === SippolQueue.QUEUE_SPP && SippolQueue.hasPendingQueue(queue)) {
-                    return {message: `SPP ${queue.info} sudah dalam antrian!`};
+                    return {message: `SPP ${queue.info} is already in queue!`};
                 }
                 console.log('+ %s: %s', queue.type.toUpperCase(), queue.info);
                 return SippolQueue.addQueue(queue);
