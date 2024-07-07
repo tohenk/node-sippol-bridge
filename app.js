@@ -264,8 +264,12 @@ class App {
                     if (Cmd.get('queue')) {
                         this.dequeue.loadQueue();
                     }
-                    this.dequeue.setConsumer(this);
-                    console.log('Queue processing is ready...');
+                    if (Cmd.get('noop')) {
+                        console.log('Bridge ready, queuing only...');
+                    } else {
+                        this.dequeue.setConsumer(this);
+                        console.log('Queue processing is ready...');
+                    }
                 })
                 .catch(err => {
                     if (err) {
@@ -381,23 +385,17 @@ class App {
             bridge.queue = queue;
             queue.bridge = bridge;
             queue.ontimeout = () => bridge.sippol.stop();
-            if (Cmd.get('noop')) {
-                return new Promise((resolve, reject) => {
-                    setTimeout(() => resolve(`Queue ${queue.type}:${queue.id} handled by ${bridge.name}`), 60000);
-                });
-            } else {
-                switch (queue.type) {
-                    case SippolQueue.QUEUE_SPP:
-                        return bridge.create(queue);
-                    case SippolQueue.QUEUE_UPLOAD:
-                        return bridge.upload(queue);
-                    case SippolQueue.QUEUE_QUERY:
-                        return bridge.query(queue);
-                    case SippolQueue.QUEUE_LIST:
-                        return bridge.list(queue);
-                    case SippolQueue.QUEUE_DOWNLOAD:
-                        return bridge.download(queue);
-                }
+            switch (queue.type) {
+                case SippolQueue.QUEUE_SPP:
+                    return bridge.create(queue);
+                case SippolQueue.QUEUE_UPLOAD:
+                    return bridge.upload(queue);
+                case SippolQueue.QUEUE_QUERY:
+                    return bridge.query(queue);
+                case SippolQueue.QUEUE_LIST:
+                    return bridge.list(queue);
+                case SippolQueue.QUEUE_DOWNLOAD:
+                    return bridge.download(queue);
             }
         }
         return Promise.reject(util.format('No bridge can handle %s!', queue.getInfo()));
