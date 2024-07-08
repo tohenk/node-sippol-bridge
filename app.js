@@ -194,12 +194,14 @@ class App {
             .on('queue-error', queue => this.handleNotify(queue))
         ;
         if (Cmd.get('queue')) {
-            process.on(process.platform === 'win32' ? 'SIGINT' : 'SIGTERM', () => {
+            const f = () => {
                 console.log('Please wait, saving queues...');
                 this.dequeue.saveQueue();
                 this.dequeue.saveLogs();
                 process.exit();
-            });
+            }
+            process.on('SIGINT', () => f());
+            process.on('SIGTERM', () => f());
         }
     }
 
