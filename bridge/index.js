@@ -22,6 +22,8 @@
  * SOFTWARE.
  */
 
+const debug = require('debug')('sippol:bridge');
+
 class SippolBridge {
 
     STATE_NONE = 1
@@ -32,6 +34,7 @@ class SippolBridge {
         this.state = this.STATE_NONE;
         this.roles = options.roles.roles || {};
         this.users = options.roles.users || {};
+        this.startup = options.startup;
         this.initialize(options);
     }
 
@@ -85,8 +88,27 @@ class SippolBridge {
         });
     }
 
-    defaultWorks() {
-        return [];
+    doStartup() {
+        if (!this.startup) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+            debug('Startup', this.startup);
+            const exec = require('child_process').exec;
+            exec(this.startup, (err, stdout, stderr) => {
+                resolve(err);
+            });
+        });
+    }
+
+    defaultWorks(options) {
+        return [
+            [w => this.doStartup(), w => this.startup],
+            [w => this.sippol.open()],
+            [w => this.sippol.waitLoader()],
+            [w => this.doAs(options.role), w => options.role],
+            [w => this.sippol.isLoggedIn(), w => options.role],
+        ];
     }
 
     do(theworks, options) {
@@ -95,7 +117,7 @@ class SippolBridge {
         if (Array.isArray(theworks)) {
             works.push(...theworks);
         }
-        if (typeof theworks == 'function') {
+        if (typeof theworks === 'function') {
             works.push(theworks);
         }
         return this.works(works, {

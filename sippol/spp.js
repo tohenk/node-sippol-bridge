@@ -517,9 +517,10 @@ class SippolSpp extends Sippol {
                         [w => new Promise((resolve, reject) => {
                             const q = new Queue(w.getRes(1), el => {
                                 this.works([
-                                    [x => el.getText()],
-                                    [x => el.click(), x => x.getRes(0).indexOf(data.value) >= 0],
-                                    [x => Promise.reject(), x => x.getRes(0).indexOf(data.value) < 0],
+                                    [x => this.isStale(el)],
+                                    [x => el.getText(), x => !x.getRes(0)],
+                                    [x => el.click(), x => !x.getRes(0) && x.getRes(1).indexOf(data.value) >= 0],
+                                    [x => Promise.reject(), x => x.getRes(0) || x.getRes(1).indexOf(data.value) < 0],
                                 ])
                                 .then(() => resolve())
                                 .catch(err => q.next());

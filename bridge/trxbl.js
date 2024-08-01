@@ -37,16 +37,15 @@ class SippolTrxblBridge extends SippolBridge {
     }
 
     defaultWorks(options) {
-        return [
-            [w => this.sippol.open()],
-            [w => this.sippol.waitLoader()],
-            [w => this.doAs(options.role), w => options.role],
-            [w => this.sippol.isLoggedIn(), w => options.role],
+        const works = super.defaultWorks(options);
+        const extended = [
             [w => this.sippol.navigateApp(), w => options.role],
             [w => this.sippol.showData('SPJ GU'), w => options.role],
             [w => this.sippol.refresh(), w => options.role],
             [w => this.sippol.sleep(this.sippol.opdelay), w => options.role],
         ];
+        works.push(...extended);
+        return works;
     }
 
     getRoleFromKeg(options) {

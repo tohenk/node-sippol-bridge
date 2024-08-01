@@ -41,15 +41,14 @@ class SippolSppBridge extends SippolBridge {
     }
 
     defaultWorks(options) {
-        return [
-            [w => this.sippol.open()],
-            [w => this.sippol.waitLoader()],
-            [w => this.doAs(options.role), w => options.role],
-            [w => this.sippol.isLoggedIn(), w => options.role],
+        const works = super.defaultWorks(options);
+        const extended = [
             [w => this.sippol.showJenis('LS - Langsung'), w => options.role],
             [w => this.sippol.showData(options.status), w => options.role],
             [w => this.sippol.sleep(this.sippol.opdelay), w => options.role],
         ];
+        works.push(...extended);
+        return works;
     }
 
     getRoleFromKeg(options) {

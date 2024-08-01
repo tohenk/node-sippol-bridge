@@ -46,6 +46,7 @@ const SippolTrxblBridge = require('./bridge/trxbl');
 const { SippolQueue } = require('./queue');
 const SippolNotifier = require('./notifier');
 const SippolCmd = require('./cmd');
+const debug = require('debug')('sippol:main');
 
 class App {
 
@@ -60,11 +61,9 @@ class App {
     sessions = {}
 
     initialize() {
-        let filename, profile;
         // read configuration from command line values
-        filename = Cmd.get('config') ? Cmd.get('config') : path.join(__dirname, 'config.json');
+        let profile, filename = Cmd.get('config') ? Cmd.get('config') : path.join(__dirname, 'config.json');
         if (fs.existsSync(filename)) {
-            console.log('Reading configuration %s', filename);
             const config = JSON.parse(fs.readFileSync(filename));
             if (config.global) {
                 this.config = config.global;
@@ -73,14 +72,22 @@ class App {
                 this.config = config;
             }
         }
-        if (Cmd.get('url')) {
-            this.config.url = Cmd.get('url');
+        for (const c of ['mode', 'url']) {
+            if (Cmd.get(c)) {
+                this.config[c] = Cmd.get(c);
+            }
+        }
+        if (!this.config.mode) {
+            return false;
         }
         if (!this.config.workdir) {
             this.config.workdir = __dirname;
         }
         if (!this.config.downloaddir) {
             this.config.downloaddir = path.join(this.config.workdir, 'download');
+        }
+        if (fs.existsSync(filename)) {
+            console.log('Configuration loaded from %s', filename);
         }
         // load roles
         filename = path.join(__dirname, 'roles.json');
@@ -89,7 +96,7 @@ class App {
             console.log('Roles loaded from %s', filename);
         }
         // load bridge specific configuration
-        switch (Cmd.get('mode')) {
+        switch (this.config.mode) {
             case this.BRIDGE_SPP:
                 // load form maps
                 filename = path.join(__dirname, 'maps.json');
@@ -105,7 +112,8 @@ class App {
                 }
                 // add default bridges
                 if (!this.configs) {
-                    this.configs = {yr: {year: new Date().getFullYear()}};
+                    const year = new Date().getFullYear();
+                    this.configs = {[`sippol-${year}`]: {year}};
                 }
                 break;
         }
@@ -189,9 +197,9 @@ class App {
             }
         }
         this.dequeue
-            .on('queue', queue => this.handleNotify(queue))
-            .on('queue-done', queue => this.handleNotify(queue))
-            .on('queue-error', queue => this.handleNotify(queue))
+            .on('queue', () => this.handleNotify())
+            .on('queue-done', () => this.handleNotify())
+            .on('queue-error', () => this.handleNotify())
         ;
         if (Cmd.get('queue')) {
             const f = () => {
@@ -206,7 +214,8 @@ class App {
     }
 
     createBridges() {
-        Object.keys(this.configs).forEach(name => {
+        const bridges = Object.keys(this.configs);
+        bridges.forEach(name => {
             const options = this.configs[name];
             const config = Object.assign({}, this.config, options);
             if (config.enabled !== undefined && !config.enabled) {
@@ -214,12 +223,16 @@ class App {
             }
             const browser = config.browser ? config.browser : 'default';
             if (browser) {
-                if (!this.sessions[browser]) this.sessions[browser] = 0;
+                if (!this.sessions[browser]) {
+                    this.sessions[browser] = 0;
+                }
                 this.sessions[browser]++;
-                if (this.sessions[browser] > 1) config.session = 's' + this.sessions[browser];
+                if (this.sessions[browser] > 1) {
+                    config.session = 's' + this.sessions[browser];
+                }
             }
             let bridge;
-            switch (Cmd.get('mode')) {
+            switch (this.config.mode) {
                 case this.BRIDGE_SPP:
                     bridge = new SippolSppBridge(config);
                     break;
@@ -269,8 +282,8 @@ class App {
                     if (Cmd.get('noop')) {
                         console.log('Bridge ready, queuing only...');
                     } else {
-                        this.dequeue.setConsumer(this);
                         console.log('Queue processing is ready...');
+                        this.dequeue.setConsumer(this);
                     }
                 })
                 .catch(err => {
@@ -287,15 +300,15 @@ class App {
 
     registerCommands() {
         const prefixes = {[this.BRIDGE_SPP]: 'spp', [this.BRIDGE_TRXBL]: 'trxbl'};
-        SippolCmd.register(this, prefixes[Cmd.get('mode')]);
+        SippolCmd.register(this, prefixes[this.config.mode]);
     }
 
     checkReadiness() {
         const readinessTimeout = this.config.readinessTimeout || 30000; // 30 seconds
         this.startTime = Date.now();
-        let interval = setInterval(() => {
-            let now = Date.now();
-            this.ready = this.readyCount() == this.bridges.length;
+        const interval = setInterval(() => {
+            const now = Date.now();
+            this.ready = this.readyCount() === this.bridges.length;
             if (this.ready) {
                 clearInterval(interval);
                 console.log('Readiness checking is done...');
@@ -328,13 +341,13 @@ class App {
         return false;
     }
 
-    getQueueHandler(queue) {
+    getQueueHandler(queue, ready = true) {
         const bridges = [];
         const year = queue.data && queue.data.year ? queue.data.year : null;
         // get prioritized bridge based on accepts type
         this.bridges.forEach(b => {
             if (b.isOperational() && b.year == year && Array.isArray(b.accepts) && b.accepts.indexOf(queue.type) >= 0) {
-                if (this.isBridgeReady(b)) {
+                if (!ready || this.isBridgeReady(b)) {
                     bridges.push(b);
                 }
             }
@@ -343,7 +356,7 @@ class App {
         if (!bridges.length) {
             this.bridges.forEach(b => {
                 if (b.isOperational() && b.year == year && b.accepts === undefined) {
-                    if (this.isBridgeReady(b)) {
+                    if (!ready || this.isBridgeReady(b)) {
                         bridges.push(b);
                     }
                 }
@@ -355,20 +368,36 @@ class App {
     readyCount() {
         let readyCnt = 0;
         this.bridges.forEach(b => {
-            if (b.isOperational()) readyCnt++;
+            if (b.isOperational()) {
+                readyCnt++;
+            }
         });
         return readyCnt;
     }
 
     isBridgeIdle(queue) {
-        const bridges = this.getQueueHandler(queue);
+        const handlers = this.getQueueHandler(queue, false);
+        if (handlers.length === 0) {
+            debug('No handler', queue);
+            queue.setStatus(SippolQueue.STATUS_SKIPPED);
+        }
+        const bridges = handlers.filter(b => this.isBridgeReady(b));
         return bridges.length ? true : false;
     }
 
     canProcessQueue() {
         if (this.readyCount() > 0) {
             const queue = this.dequeue.getNext();
-            return queue && (queue.type == SippolQueue.QUEUE_CALLBACK || this.isBridgeIdle(queue));
+            if (queue) {
+                if (!queue.logged) {
+                    debug('Next queue', queue);
+                    queue.logged = true;
+                }
+            }
+            return queue && (
+                queue.type === SippolQueue.QUEUE_CALLBACK ||
+                queue.status === SippolQueue.STATUS_SKIPPED ||
+                this.isBridgeIdle(queue));
         }
         return false;
     }
@@ -378,7 +407,7 @@ class App {
     }
 
     processQueue(queue) {
-        if (queue.type == SippolQueue.QUEUE_CALLBACK) {
+        if (queue.type === SippolQueue.QUEUE_CALLBACK) {
             return SippolNotifier.notify(queue);
         }
         const bridges = this.getQueueHandler(queue);
@@ -417,62 +446,60 @@ class App {
             year: dt.getFullYear(),
             keg: roles[0],
             [dateKey]: [from, to].join('~'),
-        };
+        }
     }
 
     run() {
-        if (Cmd.get('mode')) {
-            if (this.initialize()) {
-                this.createDequeuer();
-                this.createBridges();
-                this.registerCommands();
-                let serve = true;
-                if (Cmd.args.length) {
-                    const cmd = Cmd.args.shift();
-                    switch (Cmd.get('mode')) {
-                        case this.BRIDGE_SPP:
-                            if (cmd === 'download') {
-                                if (this.config.roles) {
-                                    const data = Object.assign(this.createDownloadData('sp2d', Cmd.args), {
-                                        ondownload: (stream, name) => {
-                                            const zipname = path.join(this.config.workdir, name + '.zip');
-                                            fs.writeFileSync(zipname, stream);
-                                            console.log(`Saved to ${zipname}...`);
-                                            process.exit();
-                                        }
-                                    });
-                                    SippolCmd.get('spp:download').consume({data});
-                                } else {
-                                    console.error('Download skipped, no roles available!');
-                                    process.exit();
-                                }
-                                serve = false;
-                            }
-                            break;
-                        case this.BRIDGE_TRXBL:
-                            if (cmd === 'download') {
-                                if (this.config.roles) {
-                                    const data = Object.assign(this.createDownloadData('date', Cmd.args), {
-                                        ondownload: (stream, name) => {
-                                            const xlsname = path.join(this.config.workdir, name + '.xlsx');
-                                            fs.writeFileSync(xlsname, stream);
-                                            console.log(`Saved to ${xlsname}...`);
-                                            process.exit();
-                                        }
-                                    });
-                                    SippolCmd.get('trxbl:download').consume({data});
-                                } else {
-                                    console.error('Download skipped, no roles available!');
-                                    process.exit();
-                                }
-                                serve = false;
-                            }
-                            break;
-                    }
-                }
-                this.createServer(serve);
-                return true;
+        if (this.initialize()) {
+            this.createDequeuer();
+            this.createBridges();
+            this.registerCommands();
+            let cmd, serve = true;
+            if (Cmd.args.length) {
+                cmd = Cmd.args.shift();
             }
+            switch (this.config.mode) {
+                case this.BRIDGE_SPP:
+                    if (cmd === 'download') {
+                        if (this.config.roles) {
+                            const data = Object.assign(this.createDownloadData('sp2d', Cmd.args), {
+                                ondownload: (stream, name) => {
+                                    const zipname = path.join(this.config.workdir, name + '.zip');
+                                    fs.writeFileSync(zipname, stream);
+                                    console.log(`Saved to ${zipname}...`);
+                                    process.exit();
+                                }
+                            });
+                            SippolCmd.get('spp:download').consume({data});
+                        } else {
+                            console.error('Download skipped, no roles available!');
+                            process.exit();
+                        }
+                        serve = false;
+                    }
+                    break;
+                case this.BRIDGE_TRXBL:
+                    if (cmd === 'download') {
+                        if (this.config.roles) {
+                            const data = Object.assign(this.createDownloadData('date', Cmd.args), {
+                                ondownload: (stream, name) => {
+                                    const xlsname = path.join(this.config.workdir, name + '.xlsx');
+                                    fs.writeFileSync(xlsname, stream);
+                                    console.log(`Saved to ${xlsname}...`);
+                                    process.exit();
+                                }
+                            });
+                            SippolCmd.get('trxbl:download').consume({data});
+                        } else {
+                            console.error('Download skipped, no roles available!');
+                            process.exit();
+                        }
+                        serve = false;
+                    }
+                    break;
+            }
+            this.createServer(serve);
+            return true;
         } else {
             usage();
         }

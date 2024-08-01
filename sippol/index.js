@@ -26,7 +26,7 @@ const WebRobot = require('@ntlab/webrobot');
 const Queue = require('@ntlab/work/queue');
 const { By, WebElement } = require('selenium-webdriver');
 const util = require('util');
-const debug = require('debug')('sippol');
+const debug = require('debug')('sippol:core');
 
 /**
  * Get row identifier.
@@ -1196,6 +1196,9 @@ class SippolDataFetcher {
 class SippolStopError extends Error {
 }
 
+class SippolRetryError extends Error {
+}
+
 class SippolAnnouncedError extends Error {
 
     toString() {
@@ -1211,4 +1214,4 @@ class SippolAnnouncedError extends Error {
     }
 }
 
-module.exports = { Sippol, SippolPaginator, SippolDataFetcher, SippolStopError, SippolAnnouncedError };
+module.exports = { Sippol, SippolPaginator, SippolDataFetcher, SippolStopError, SippolRetryError, SippolAnnouncedError };

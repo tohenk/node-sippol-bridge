@@ -29,6 +29,7 @@ const util = require('util');
 const EventEmitter = require('events');
 const Queue = require('@ntlab/work/queue');
 const SippolUtil = require('./util');
+const { SippolRetryError } = require('./sippol');
 
 let dequeue;
 
@@ -42,45 +43,69 @@ class SippolDequeue extends EventEmitter {
         this.queues = [];
         this.queue = new Queue([], queue => this.doQueue(queue), () => this.canProcess());
         this.timeout = 5 * 60 * 1000;
+        this.retry = 0;
     }
 
     doQueue(queue) {
         if (this.consumer) {
-            try {
-                queue.start();
-                this.emit('queue-start', queue);
-                this.consumer.processQueue(queue)
-                    .then(res => {
-                        queue.done(res);
-                        this.setLastQueue(queue);
-                        if (typeof queue.resolve == 'function') {
-                            queue.resolve(res);
+            const success = res => {
+                queue.done(res);
+                this.setLastQueue(queue);
+                if (typeof queue.resolve === 'function') {
+                    queue.resolve(res);
+                }
+                this.emit('queue-done', queue);
+                this.queue.next();
+            }
+            const fail = err => {
+                queue.error(err);
+                this.setLastQueue(queue);
+                if (typeof queue.reject === 'function') {
+                    queue.reject(err);
+                }
+                this.emit('queue-error', queue);
+                this.queue.next();
+            }
+            const retry = err => {
+                queue.retryCount = (queue.retryCount !== undefined ? queue.retryCount : 0) + 1;
+                if (err instanceof SippolRetryError && queue.retry && queue.retryCount <= this.retry) {
+                    console.log('Retrying %s (%d)...', queue.toString(), queue.retryCount);
+                    if (typeof queue.onretry === 'function') {
+                        queue.onretry()
+                            .then(() => doit())
+                            .catch(err => fail(err));
+                    } else {
+                        doit();
+                    }
+                } else {
+                    fail(err);
+                }
+            }
+            const doit = () => {
+                try {
+                    if (queue.status !== SippolQueue.STATUS_SKIPPED) {
+                        queue.start();
+                        this.emit('queue-start', queue);
+                        this.consumer.processQueue(queue)
+                            .then(res => success(res))
+                            .catch(err => retry(err));
+                        // check for next queue
+                        const nextqueue = this.getNext();
+                        if (nextqueue && nextqueue.type !== SippolQueue.QUEUE_CALLBACK) {
+                            if (this.consumer.canHandleNextQueue(nextqueue)) {
+                                this.queue.next();
+                            }
                         }
-                        this.emit('queue-done', queue);
-                        this.queue.next();
-                    })
-                    .catch(err => {
-                        queue.error(err);
-                        this.setLastQueue(queue);
-                        if (typeof queue.reject == 'function') {
-                            queue.reject(err);
-                        }
-                        this.emit('queue-error', queue);
-                        this.queue.next();
-                    })
-                ;
-                // check for next queue
-                const nextqueue = this.getNext();
-                if (nextqueue && nextqueue.type != SippolQueue.QUEUE_CALLBACK) {
-                    if (this.consumer.canHandleNextQueue(nextqueue)) {
+                    } else {
                         this.queue.next();
                     }
                 }
+                catch (err) {
+                    console.error('Got an error while processing queue: %s!', err);
+                    this.queue.next();
+                }
             }
-            catch (err) {
-                console.error('Got an error while processing queue: %s!', err);
-                this.queue.next();
-            }
+            doit();
         }
     }
 
@@ -91,9 +116,9 @@ class SippolDequeue extends EventEmitter {
     setConsumer(consumer) {
         this.consumer = consumer;
         if (this.consumer) {
-            if (this.queues.length) {
-                this.queue.next();
-            }
+            this.queue.on('done', () => {
+                this.emit('queue-idle', this);
+            });
             const f = () => {
                 // check for timeout
                 const processing = this.queues.filter(queue => queue.status === SippolQueue.STATUS_PROCESSING);
@@ -101,11 +126,11 @@ class SippolDequeue extends EventEmitter {
                     const queue = processing[0];
                     const t = new Date().getTime();
                     const d = t - queue.time.getTime();
-                    const timeout = queue.data && queue.data.timeout != undefined ?
+                    const timeout = queue.data && queue.data.timeout !== undefined ?
                         queue.data.timeout : this.timeout;
                     if (timeout > 0 && d > timeout) {
                         queue.setStatus(SippolQueue.STATUS_TIMED_OUT);
-                        if (typeof queue.ontimeout == 'function') {
+                        if (typeof queue.ontimeout === 'function') {
                             queue.ontimeout()
                                 .then(() => this.queue.next())
                                 .catch(() => this.queue.next())
@@ -114,6 +139,8 @@ class SippolDequeue extends EventEmitter {
                             this.queue.next();
                         }
                     }
+                } else if (this.queues.length) {
+                    this.queue.next();
                 }
                 // run on next
                 setTimeout(f, 100);
@@ -133,7 +160,7 @@ class SippolDequeue extends EventEmitter {
             queue.setId(SippolUtil.genId());
         }
         this.queues.push(queue);
-        this.queue.requeue([queue], queue.type == SippolQueue.QUEUE_CALLBACK ? true : false);
+        this.queue.requeue([queue], queue.type === SippolQueue.QUEUE_CALLBACK ? true : false);
         this.queue.next();
         return {status: 'queued', id: queue.id};
     }
@@ -151,7 +178,7 @@ class SippolDequeue extends EventEmitter {
     }
 
     setLastQueue(queue) {
-        if (queue.type != SippolQueue.QUEUE_CALLBACK) {
+        if (queue.type !== SippolQueue.QUEUE_CALLBACK) {
             this.last = queue;
         }
         return this;
@@ -231,7 +258,7 @@ class SippolDequeue extends EventEmitter {
         const result = {};
         Object.keys(info).forEach(k => {
             let v = info[k];
-            if (typeof v == 'function') {
+            if (typeof v === 'function') {
                 v = v();
             }
             result[k] = v;
@@ -263,21 +290,21 @@ class SippolQueue
     }
 
     setStatus(status) {
-        if (this.status != status) {
+        if (this.status !== status) {
             this.status = status;
             console.log('Queue %s %s', this.toString(), this.getStatusText());
         }
     }
 
     setResult(result) {
-        if (this.result != result) {
+        if (this.result !== result) {
             this.result = result;
             console.log('Queue %s result: %s', this.toString(), this.result instanceof Error ? this.result.toString() : this.result);
         }
     }
 
     setTime(time) {
-        if (time == null || time == undefined) {
+        if (time === null || time === undefined) {
             time = new Date();
         }
         this.time = time;
@@ -292,12 +319,14 @@ class SippolQueue
     }
 
     getMappedData(name) {
-        if (this.maps && typeof name == 'string') {
+        if (this.maps && typeof name === 'string') {
             let o = this.maps;
-            let parts = name.split('.');
+            const parts = name.split('.');
             while (parts.length) {
                 let n = parts.shift();
-                if (n.substring(0, 1) == '#') n = n.substring(1);
+                if (n.substring(0, 1) === '#') {
+                    n = n.substring(1);
+                }
                 if (o[n]) {
                     o = o[n];
                 } else {
@@ -305,7 +334,7 @@ class SippolQueue
                     break;
                 }
             }
-            if (typeof o == 'string' && this.data[o]) {
+            if (typeof o === 'string' && this.data[o]) {
                 return this.data[o];
             }
         }
@@ -327,7 +356,12 @@ class SippolQueue
     }
 
     finished() {
-        return [SippolQueue.STATUS_DONE, SippolQueue.STATUS_ERROR, SippolQueue.STATUS_TIMED_OUT].indexOf(this.status) >= 0;
+        return [
+            SippolQueue.STATUS_DONE,
+            SippolQueue.STATUS_ERROR,
+            SippolQueue.STATUS_TIMED_OUT,
+            SippolQueue.STATUS_SKIPPED,
+        ].indexOf(this.status) >= 0;
     }
 
     getLog(raw = false) {
@@ -349,7 +383,7 @@ class SippolQueue
 
     getInfo() {
         let info = this.info;
-        if (!info && this.type == SippolQueue.QUEUE_CALLBACK) {
+        if (!info && this.type === SippolQueue.QUEUE_CALLBACK) {
             info = this.callback;
         }
         return info;
@@ -428,6 +462,7 @@ class SippolQueue
     static get STATUS_DONE() { return 'done' }
     static get STATUS_ERROR() { return 'error' }
     static get STATUS_TIMED_OUT() { return 'timeout' }
+    static get STATUS_SKIPPED() { return 'skipped' }
 }
 
 module.exports = { SippolQueue, SippolDequeue };
