@@ -13,6 +13,6 @@
     "easy-pdf-merge": "^0.2.6",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.8.0"
   }
 }
