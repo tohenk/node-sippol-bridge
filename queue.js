@@ -31,6 +31,7 @@ const Queue = require('@ntlab/work/queue');
 const SippolUtil = require('./util');
 const { SippolRetryError } = require('./sippol');
 
+/** @type {SippolDequeue} */
 let dequeue;
 
 class SippolDequeue extends EventEmitter {

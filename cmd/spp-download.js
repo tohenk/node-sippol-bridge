@@ -32,18 +32,34 @@ class SippolCmdSppDownload extends SippolCmd {
 
     consume(payload) {
         const { socket, data } = payload;
-        if (data.year && data.keg) {
-            const options = {year: data.year, keg: data.keg, timeout: 0};
+        if (data.year && (data.keg || data.all)) {
+            const roles = this.parent.config.roles.roles;
+            const kegs = data.all ? Object.keys(roles) : (Array.isArray(data.keg) ? data.keg : [data.keg]);
+            const options = {year: data.year};
             SippolUtil.getDateForOptions(options, data, this.dates);
-            return this.dequeue.createQueue({
-                type: SippolQueue.QUEUE_DOWNLOAD,
-                data: options,
-                info: SippolUtil.getDateInfo(options, this.dates),
-                download: data.ondownload,
-                callback: socket?.callback,
-            });
+            const res = [];
+            const users = [];
+            for (const keg of kegs) {
+                if (users.indexOf(roles[keg]) >= 0) {
+                    continue;
+                }
+                users.push(roles[keg]);
+                res.push(this.dequeue.createQueue({
+                    type: SippolQueue.QUEUE_DOWNLOAD,
+                    data: Object.assign({}, options, {keg, timeout: 0}),
+                    info: SippolUtil.getDateInfo(options, this.dates),
+                    download: data.ondownload,
+                    callback: socket?.callback,
+                }));
+            }
+            if (res.length > 1) {
+                return {status: 'queued', id: res.map(q => q.id)};
+            }
+            if (res.length === 1) {
+                return res[0];
+            }
         }
-        return this.createError('Ignoring download without year or keg');
+        return this.createError('Ignoring download without year, keg, or all option');
     }
 }
 

@@ -433,7 +433,6 @@ class App {
     }
 
     createDownloadData(dateKey, args) {
-        const roles = Object.keys(this.config.roles.roles);
         const dt = new Date();
         let from, to;
         if (Array.isArray(args) && args.length) {
@@ -444,7 +443,7 @@ class App {
         }
         return {
             year: dt.getFullYear(),
-            keg: roles[0],
+            all: true,
             [dateKey]: [from, to].join('~'),
         }
     }
